@@ -53,6 +53,19 @@ def get_ema_with_retry(close, period):
         time.sleep(0.5)
     return None
 
+def calculate_rsi(close, period=14):
+    if len(close) < period:
+        return None
+    series = pd.Series(close)
+    delta = series.diff()
+    gain = delta.where(delta > 0, 0)
+    loss = -delta.where(delta < 0, 0)
+    avg_gain = gain.rolling(window=period).mean()
+    avg_loss = loss.rolling(window=period).mean()
+    rs = avg_gain / avg_loss
+    rsi = 100 - (100 / (1 + rs))
+    return rsi.iloc[-1] if not rsi.empty else None
+
 def get_all_okx_swap_symbols():
     url = "https://www.okx.com/api/v5/public/instruments?instType=SWAP"
     response = retry_request(requests.get, url)
@@ -114,6 +127,50 @@ def get_ema_bullish_status(inst_id):
         logging.error(f"{inst_id} EMA 상태 계산 실패: {e}")
         return None
 
+def get_ema_status_text(df, timeframe="1H"):
+    close = df['c'].astype(float).values
+
+    ema_5 = get_ema_with_retry(close, 5)
+    ema_20 = get_ema_with_retry(close, 20)
+    ema_50 = get_ema_with_retry(close, 50)
+    ema_200 = get_ema_with_retry(close, 200)
+    ema_2 = get_ema_with_retry(close, 2)
+    ema_3 = get_ema_with_retry(close, 3)
+    rsi_14 = calculate_rsi(close, 14)
+
+    def check(cond):
+        if cond is None:
+            return "[❌]"
+        return "[🟩]" if cond else "[🟥]"
+
+    def safe_compare(a, b):
+        if a is None or b is None:
+            return None
+        return a > b
+
+    trend_status = [
+        check(safe_compare(ema_5, ema_20)),
+        check(safe_compare(ema_20, ema_50)),
+        check(safe_compare(ema_50, ema_200))
+    ]
+    short_term_status = check(safe_compare(ema_2, ema_3))
+    rsi_text = f"{rsi_14:.2f}" if rsi_14 is not None else "N/A"
+
+    return f"[{timeframe}] 📊: {' '.join(trend_status)} / 🔄 {short_term_status} / RSI: {rsi_text}"
+
+def get_all_timeframe_ema_status(inst_id):
+    timeframes = {'1D': 250, '4H': 300, '1H': 300, '15m': 300}
+    status_lines = []
+    for tf, limit in timeframes.items():
+        df = get_ohlcv_okx(inst_id, bar=tf, limit=limit)
+        if df is not None:
+            status = get_ema_status_text(df, timeframe=tf)
+        else:
+            status = f"[{tf}] 📊: ❌ 불러오기 실패"
+        status_lines.append(status)
+        time.sleep(0.2)
+    return "\n".join(status_lines)
+
 def calculate_daily_change(inst_id):
     df = get_ohlcv_okx(inst_id, bar="1H", limit=48)
     if df is None or len(df) < 24:
@@ -151,49 +208,6 @@ def format_change_with_emoji(change):
     else:
         return f"🔴 ({change:.2f}%)"
 
-def get_ema_status_text(df, timeframe="1H"):
-    close = df['c'].astype(float).values
-
-    ema_5 = get_ema_with_retry(close, 5)
-    ema_20 = get_ema_with_retry(close, 20)
-    ema_50 = get_ema_with_retry(close, 50)
-    ema_200 = get_ema_with_retry(close, 200)
-    ema_2 = get_ema_with_retry(close, 2)
-    ema_3 = get_ema_with_retry(close, 3)
-
-    def check(cond):
-        if cond is None:
-            return "[❌]"
-        return "[🟩]" if cond else "[🟥]"
-
-    def safe_compare(a, b):
-        if a is None or b is None:
-            return None
-        return a > b
-
-    status_parts = [
-        check(safe_compare(ema_5, ema_20)),
-        check(safe_compare(ema_20, ema_50)),
-        check(safe_compare(ema_50, ema_200))
-    ]
-
-    short_term_status = check(safe_compare(ema_2, ema_3))
-
-    return f"[{timeframe}] 📊: {' '.join(status_parts)} / 📆 2일선>3일선: {short_term_status}"
-
-def get_all_timeframe_ema_status(inst_id):
-    timeframes = {'1D': 250, '4H': 300, '1H': 300, '15m': 300}
-    status_lines = []
-    for tf, limit in timeframes.items():
-        df = get_ohlcv_okx(inst_id, bar=tf, limit=limit)
-        if df is not None:
-            status = get_ema_status_text(df, timeframe=tf)
-        else:
-            status = f"[{tf}] 📊: ❌ 불러오기 실패"
-        status_lines.append(status)
-        time.sleep(0.2)
-    return "\n".join(status_lines)
-
 def calculate_1h_volume(inst_id):
     df = get_ohlcv_okx(inst_id, bar="1H", limit=24)
     if df is None or len(df) < 1:
@@ -224,9 +238,17 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count):
         "━━━━━━━━━━━━━━━━━━━"
     ]
 
-    if top_bullish:
-        message_lines.append("📈 [정배열 + 거래대금 TOP 3]")
-        for i, (inst_id, _, change, volume_1h) in enumerate(top_bullish, 1):
+    filtered_top_bullish = []
+    for item in top_bullish:
+        inst_id = item[0]
+        volume_1h = calculate_1h_volume(inst_id)
+        if volume_1h < 1_000_000:
+            continue
+        filtered_top_bullish.append((inst_id, item[1], item[2], volume_1h))
+
+    if filtered_top_bullish:
+        message_lines.append("📈 [정배열 + 거래대금 TOP (1000만 이상)]")
+        for i, (inst_id, _, change, volume_1h) in enumerate(filtered_top_bullish, 1):
             name = inst_id.replace("-USDT-SWAP", "")
             ema_status = get_all_timeframe_ema_status(inst_id)
             volume_str = format_volume_in_eok(volume_1h) or "🚫"
@@ -239,31 +261,29 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count):
 
     send_telegram_message("\n".join(message_lines))
 
-# ✅ main 함수 수정됨
 def main():
     logging.info("📥 EMA 분석 시작")
     all_ids = get_all_okx_swap_symbols()
-
-    volume_data = []
-    for inst_id in all_ids:
-        volume = calculate_1h_volume(inst_id)
-        volume_data.append((inst_id, volume))
-        time.sleep(0.05)
-
-    # 거래대금 상위 10개 추출
-    top_10_volume = sorted(volume_data, key=lambda x: x[1], reverse=True)[:10]
-
+    total_count = len(all_ids)
     bullish_list = []
-    for inst_id, volume in top_10_volume:
-        if volume < 1_000_000:
-            continue
 
+    for inst_id in all_ids:
         is_bullish = get_ema_bullish_status(inst_id)
         if not is_bullish:
             continue
 
+        # ✅ 추가된 1시간봉 EMA 2 < EMA 3 (역배열) 필터
+        df_1h = get_ohlcv_okx(inst_id, bar="1H", limit=300)
+        if df_1h is None:
+            continue
+        close_1h = df_1h['c'].values
+        ema_2 = get_ema_with_retry(close_1h, 2)
+        ema_3 = get_ema_with_retry(close_1h, 3)
+        if ema_2 is None or ema_3 is None or ema_2 > ema_3:
+            continue
+
         daily_change = calculate_daily_change(inst_id)
-        if daily_change is None or daily_change <= -100:
+        if daily_change is None or daily_change <= 0:
             continue
 
         df_24h = get_ohlcv_okx(inst_id, bar="1D", limit=2)
@@ -274,9 +294,8 @@ def main():
         bullish_list.append((inst_id, vol_24h, daily_change))
         time.sleep(0.1)
 
-    # 정배열 종목 중 거래대금 상위 3개 추출
-    top_bullish = sorted(bullish_list, key=lambda x: x[1], reverse=True)[:3]
-    send_ranked_volume_message(top_bullish, len(all_ids), len(bullish_list))
+    top_bullish = sorted(bullish_list, key=lambda x: (x[1], x[2]), reverse=True)[:3]
+    send_ranked_volume_message(top_bullish, total_count, len(bullish_list))
 
 def run_scheduler():
     while True:
