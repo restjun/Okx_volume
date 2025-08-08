@@ -234,12 +234,25 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count):
         btc_rank_display = f"{btc_rank}위"
 
     message_lines += [
-        "🎯 코인지수 비트코인 / 실시간 눌림 ",
+        "🎯 코인지수 비트코인  ",
         "━━━━━━━━━━━━━━━━━━━",
         f"💰 BTC {format_change_with_emoji(btc_change)} / 거래대금: ({btc_volume_str}) / 🔢 랭킹: {btc_rank_display}",
         f"{btc_ema_status}",
         "━━━━━━━━━━━━━━━━━━━"
     ]
+
+    # ⬅️ 추가: 실시간 거래대금 1위 정보
+    if all_volume_data:
+        top_inst_id, top_vol = all_volume_data[0]
+        top_change = calculate_daily_change(top_inst_id)
+        top_ema_status = get_all_timeframe_ema_status(top_inst_id)
+        top_name = top_inst_id.replace("-USDT-SWAP", "")
+        top_vol_str = format_volume_in_eok(top_vol) or "🚫"
+        message_lines += [
+            f"🏆 **실시간 거래대금 1위**: {top_name} {format_change_with_emoji(top_change)} / 거래대금: ({top_vol_str})",
+            f"{top_ema_status}",
+            "━━━━━━━━━━━━━━━━━━━"
+        ]
 
     filtered_top_bullish = []
     for item in top_bullish:
@@ -251,7 +264,7 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count):
         filtered_top_bullish.append((inst_id, item[1], item[2], volume_1h, rank))
 
     if filtered_top_bullish:
-        message_lines.append("📈 [정배열 + 거래대금 TOP10 (1000만 이상)]")
+        message_lines.append("📈 [정배열 + 실시간 눌림 1위")
         for i, (inst_id, _, change, volume_1h, rank) in enumerate(filtered_top_bullish, 1):
             name = inst_id.replace("-USDT-SWAP", "")
             ema_status = get_all_timeframe_ema_status(inst_id)
@@ -269,7 +282,6 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count):
 
     send_telegram_message("\n".join(message_lines))
 
-# ✅ 새로 추가된 함수: 1시간봉 20-50 골든크로스 후 20시간 이내 여부 확인
 def is_recent_20_50_golden_cross(inst_id, max_hours=20):
     df = get_ohlcv_okx(inst_id, bar='1H', limit=300)
     if df is None or len(df) < 50:
@@ -300,7 +312,6 @@ def main():
         if not is_bullish:
             continue
 
-        # ⬇️ 20-50 골든크로스 후 20시간 이내 조건 추가
         if not is_recent_20_50_golden_cross(inst_id, max_hours=20):
             continue
 
