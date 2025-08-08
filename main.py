@@ -1,4 +1,4 @@
-aààafrom fastapi import FastAPI
+from fastapi import FastAPI
 import telepot
 import schedule
 import time
@@ -95,8 +95,7 @@ def get_ema_bullish_status(inst_id):
             return (
                 get_ema_with_retry(close, 5),
                 get_ema_with_retry(close, 20),
-                get_ema_with_retry(close, 50),
-                get_ema_with_retry(close, 200)
+                get_ema_with_retry(close, 50)
             )
 
         ema_1h = get_emas(close_1h)
@@ -107,7 +106,7 @@ def get_ema_bullish_status(inst_id):
             return None
 
         def is_bullish(ema):
-            return ema[0] > ema[1] > ema[2] > ema[3]
+            return ema[0] > ema[1] > ema[2]  # 5 > 20 > 50
 
         return is_bullish(ema_1h) and is_bullish(ema_4h) and is_bullish(ema_1d)
 
@@ -121,7 +120,6 @@ def get_ema_status_text(df, timeframe="1H"):
     ema_5 = get_ema_with_retry(close, 5)
     ema_20 = get_ema_with_retry(close, 20)
     ema_50 = get_ema_with_retry(close, 50)
-    ema_200 = get_ema_with_retry(close, 200)
 
     def check(cond):
         if cond is None:
@@ -135,8 +133,7 @@ def get_ema_status_text(df, timeframe="1H"):
 
     trend_status = [
         check(safe_compare(ema_5, ema_20)),
-        check(safe_compare(ema_20, ema_50)),
-        check(safe_compare(ema_50, ema_200))
+        check(safe_compare(ema_20, ema_50))
     ]
 
     if timeframe == "1H":
