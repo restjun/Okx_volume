@@ -92,40 +92,36 @@ def get_ohlcv_okx(instId, bar='1H', limit=200):
         logging.error(f"{instId} OHLCV 파싱 실패: {e}")
         return None
 
-def get_ema_bullish_status(inst_id):
+def get_ema_bullish_status_sequential(inst_id):
     try:
-        df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=300)
-        df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=300)
         df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=300)
-        if df_1h is None or df_4h is None or df_1d is None:
-            return None
-
-        close_1h = df_1h['c'].values
-        close_4h = df_4h['c'].values
+        if df_1d is None:
+            return False
         close_1d = df_1d['c'].values
+        ema_1d = (get_ema_with_retry(close_1d, 5), get_ema_with_retry(close_1d, 20), get_ema_with_retry(close_1d, 50))
+        if None in ema_1d or not (ema_1d[0] > ema_1d[1] > ema_1d[2]):
+            return False
 
-        def get_emas(close):
-            return (
-                get_ema_with_retry(close, 5),
-                get_ema_with_retry(close, 20),
-                get_ema_with_retry(close, 50)
-            )
+        df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=300)
+        if df_4h is None:
+            return False
+        close_4h = df_4h['c'].values
+        ema_4h = (get_ema_with_retry(close_4h, 5), get_ema_with_retry(close_4h, 20), get_ema_with_retry(close_4h, 50))
+        if None in ema_4h or not (ema_4h[0] > ema_4h[1] > ema_4h[2]):
+            return False
 
-        ema_1h = get_emas(close_1h)
-        ema_4h = get_emas(close_4h)
-        ema_1d = get_emas(close_1d)
+        df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=300)
+        if df_1h is None:
+            return False
+        close_1h = df_1h['c'].values
+        ema_1h = (get_ema_with_retry(close_1h, 5), get_ema_with_retry(close_1h, 20), get_ema_with_retry(close_1h, 50))
+        if None in ema_1h or not (ema_1h[0] > ema_1h[1] > ema_1h[2]):
+            return False
 
-        if None in ema_1h + ema_4h + ema_1d:
-            return None
-
-        def is_bullish(ema):
-            return ema[0] > ema[1] > ema[2]
-
-        return is_bullish(ema_1h) and is_bullish(ema_4h) and is_bullish(ema_1d)
-
+        return True
     except Exception as e:
-        logging.error(f"{inst_id} EMA 상태 계산 실패: {e}")
-        return None
+        logging.error(f"{inst_id} EMA 정배열 순차 필터 오류: {e}")
+        return False
 
 def is_recent_20_50_golden_cross(df, limit=20):
     try:
@@ -278,8 +274,7 @@ def main():
     bullish_list = []
 
     for inst_id in all_ids:
-        is_bullish = get_ema_bullish_status(inst_id)
-        if not is_bullish:
+        if not get_ema_bullish_status_sequential(inst_id):
             continue
 
         df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=60)
