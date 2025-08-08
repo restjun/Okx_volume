@@ -128,12 +128,20 @@ def is_recent_50_200_golden_cross_and_still_bullish(df, limit=10):
         closes = df['c'].astype(float)
         ema_50 = closes.ewm(span=50, adjust=False).mean()
         ema_200 = closes.ewm(span=200, adjust=False).mean()
+
         cross = (ema_50 > ema_200) & (ema_50.shift(1) <= ema_200.shift(1))
-        recent_crosses = cross.iloc[-limit:]
-        if not recent_crosses.any():
+        cross_indices = cross[cross].index
+
+        if cross_indices.empty:
             return False
-        recent_cross_index = recent_crosses[recent_crosses].index[0]
-        still_bullish = (ema_50 > ema_200).loc[recent_cross_index:]
+
+        last_cross_idx = cross_indices[-1]
+        candles_since_cross = len(df) - df.index.get_loc(last_cross_idx) - 1
+
+        if candles_since_cross >= 10:
+            return False
+
+        still_bullish = (ema_50 > ema_200).iloc[last_cross_idx + 1:]
         return still_bullish.all()
     except Exception as e:
         logging.error(f"50-200 정배열 지속 필터 오류: {e}")
