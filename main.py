@@ -249,7 +249,7 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count):
         top_name = top_inst_id.replace("-USDT-SWAP", "")
         top_vol_str = format_volume_in_eok(top_vol) or "🚫"
         message_lines += [
-            f"🏆 **실시간 거래대금 1위**: {top_name} {format_change_with_emoji(top_change)} / 거래대금: ({top_vol_str})",
+            f"🏆 **실시간 거래대금 1위**\n  *1.{top_name} {format_change_with_emoji(top_change)} / 거래대금: ({top_vol_str})",
             f"{top_ema_status}",
             "━━━━━━━━━━━━━━━━━━━"
         ]
