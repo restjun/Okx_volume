@@ -241,7 +241,7 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count):
     btc_volume_str = format_volume_in_eok(btc_volume) or "🚫"
 
     message_lines += [
-        "🎯 코인지수 비트코인",
+        "🎯 코인지수 비트코인 <최근 정배열>",
         "━━━━━━━━━━━━━━━━━━━",
         f"💰 BTC {format_change_with_emoji(btc_change)} / 거래대금: ({btc_volume_str})",
         f"{btc_ema_status}",
