@@ -247,7 +247,7 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count):
         inst_id = item[0]
         volume_1h = calculate_1h_volume(inst_id)
         rank = volume_rank_map.get(inst_id)
-        if volume_1h < 1_000_000 or rank is None or rank > 10:
+        if volume_1h < 1_000_000 or rank is None or rank > 5:
             continue
         filtered_top_bullish.append((inst_id, item[1], item[2], volume_1h, rank))
 
