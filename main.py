@@ -302,7 +302,7 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count):
                 "━━━━━━━━━━━━━━━━━━━"
             ]
     else:
-        message_lines.append("📉 거래대금 1000만 이상인 정배열 종목이 없습니다.")
+        message_lines.append("📉 거래대금 정배열 종목이 없습니다.")
 
     send_telegram_message("\n".join(message_lines))
 
