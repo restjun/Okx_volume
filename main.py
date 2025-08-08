@@ -19,7 +19,8 @@ logging.basicConfig(level=logging.INFO)
 def send_telegram_message(message):
     for retry_count in range(1, 11):
         try:
-            bot.sendMessage(chat_id=telegram_user_id, text=message, parse_mode="Markdown")
+            # ✅ parse_mode 제거 (Markdown 파싱 오류 방지)
+            bot.sendMessage(chat_id=telegram_user_id, text=message)
             logging.info("텔레그램 메시지 전송 성공: %s", message)
             return
         except Exception as e:
@@ -83,13 +84,11 @@ def get_ema_bullish_status(inst_id):
     try:
         df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=300)
         df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=300)
-        df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=300)
-        if df_1h is None or df_4h is None or df_1d is None:
+        if df_1h is None or df_4h is None:
             return None
 
         close_1h = df_1h['c'].values
         close_4h = df_4h['c'].values
-        close_1d = df_1d['c'].values
 
         def get_emas(close):
             return (
@@ -100,15 +99,14 @@ def get_ema_bullish_status(inst_id):
 
         ema_1h = get_emas(close_1h)
         ema_4h = get_emas(close_4h)
-        ema_1d = get_emas(close_1d)
 
-        if None in ema_1h + ema_4h + ema_1d:
+        if None in ema_1h + ema_4h:
             return None
 
         def is_bullish(ema):
             return ema[0] > ema[1] > ema[2]
 
-        return is_bullish(ema_1h) and is_bullish(ema_4h) and is_bullish(ema_1d)
+        return is_bullish(ema_1h) and is_bullish(ema_4h)
 
     except Exception as e:
         logging.error(f"{inst_id} EMA 상태 계산 실패: {e}")
@@ -116,7 +114,6 @@ def get_ema_bullish_status(inst_id):
 
 def get_ema_status_text(df, timeframe="1H"):
     close = df['c'].astype(float).values
-
     ema_5 = get_ema_with_retry(close, 5)
     ema_20 = get_ema_with_retry(close, 20)
     ema_50 = get_ema_with_retry(close, 50)
@@ -147,7 +144,7 @@ def get_ema_status_text(df, timeframe="1H"):
         return f"[{timeframe}] 📊: {' '.join(trend_status)}"
 
 def get_all_timeframe_ema_status(inst_id):
-    timeframes = {'1D': 250, '4H': 300, '1H': 300}
+    timeframes = {'4H': 300, '1H': 300}
     status_lines = []
     for tf, limit in timeframes.items():
         df = get_ohlcv_okx(inst_id, bar=tf, limit=limit)
@@ -197,19 +194,19 @@ def format_change_with_emoji(change):
         return f"🔴 ({change:.2f}%)"
 
 def calculate_1h_volume(inst_id):
-    df = get_ohlcv_okx(inst_id, bar="1H", limit=1)
+    df = get_ohlcv_okx(inst_id, bar="1H", limit=24)
     if df is None or len(df) < 1:
         return 0
     return df["volCcyQuote"].sum()
 
 def send_ranked_volume_message(top_bullish, total_count, bullish_count):
     bearish_count = total_count - bullish_count
-
     message_lines = [
-        f"📊 전체 조회 코인 수: {total_count}개",
         f"🟢 EMA 정배열: {bullish_count}개",
         f"🔴 EMA 역배열: {bearish_count}개",
-        "━━━━━━━━━━━━━━━━━━━"
+        "━━━━━━━━━━━━━━━━━━━",
+        "🎯 코인지수 비트코인",
+        "━━━━━━━━━━━━━━━━━━━",
     ]
 
     all_volume_data = []
@@ -217,7 +214,6 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count):
         vol = calculate_1h_volume(inst_id)
         all_volume_data.append((inst_id, vol))
         time.sleep(0.05)
-
     all_volume_data.sort(key=lambda x: x[1], reverse=True)
     volume_rank_map = {inst_id: rank + 1 for rank, (inst_id, _) in enumerate(all_volume_data)}
 
@@ -227,30 +223,30 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count):
     btc_volume = calculate_1h_volume(btc_id)
     btc_volume_str = format_volume_in_eok(btc_volume) or "🚫"
     btc_rank = volume_rank_map.get(btc_id, "N/A")
+    btc_rank_display = f"⭐ {btc_rank}위" if isinstance(btc_rank, int) and btc_rank <= 3 else f"{btc_rank}위"
 
-    if isinstance(btc_rank, int) and btc_rank <= 3:
-        btc_rank_display = f"⭐ **{btc_rank}위**"
-    else:
-        btc_rank_display = f"{btc_rank}위"
-
+    # BTC 메시지 — EMA 상태 줄바꿈으로 분리
     message_lines += [
-        "🎯 코인지수 비트코인  ",
-        "━━━━━━━━━━━━━━━━━━━",
-        f"💰 BTC {format_change_with_emoji(btc_change)} / 거래대금: ({btc_volume_str}) / 🔢 랭킹: {btc_rank_display}",
-        f"{btc_ema_status}",
+        f"💰 BTC {format_change_with_emoji(btc_change)} / 거래대금: ({btc_volume_str})",
+        btc_ema_status,
+        f"🔢 랭킹: {btc_rank_display}",
         "━━━━━━━━━━━━━━━━━━━"
     ]
 
-    # ⬅️ 추가: 실시간 거래대금 1위 정보
     if all_volume_data:
         top_inst_id, top_vol = all_volume_data[0]
         top_change = calculate_daily_change(top_inst_id)
         top_ema_status = get_all_timeframe_ema_status(top_inst_id)
         top_name = top_inst_id.replace("-USDT-SWAP", "")
         top_vol_str = format_volume_in_eok(top_vol) or "🚫"
+        top_rank = volume_rank_map.get(top_inst_id, "N/A")
+        top_rank_display = f"⭐ {top_rank}위" if isinstance(top_rank, int) and top_rank <= 3 else f"{top_rank}위"
+
         message_lines += [
-            f"🏆 **실시간 거래대금 ⭐1위**\n  *1.{top_name} {format_change_with_emoji(top_change)} / 거래대금: ({top_vol_str})",
-            f"{top_ema_status}",
+            "🏆 실시간 거래대금 1위",
+            f"1. {top_name} {format_change_with_emoji(top_change)} / 거래대금: ({top_vol_str})",
+            top_ema_status,
+            f"🔢 랭킹: {top_rank_display}",
             "━━━━━━━━━━━━━━━━━━━"
         ]
 
@@ -264,16 +260,18 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count):
         filtered_top_bullish.append((inst_id, item[1], item[2], volume_1h, rank))
 
     if filtered_top_bullish:
-        message_lines.append("📈 [정배열 + 실시간 눌림 1위")
+        message_lines.append("📈 [정배열 + 실시간 눌림 상위]")
         for i, (inst_id, _, change, volume_1h, rank) in enumerate(filtered_top_bullish, 1):
             name = inst_id.replace("-USDT-SWAP", "")
             ema_status = get_all_timeframe_ema_status(inst_id)
             volume_str = format_volume_in_eok(volume_1h) or "🚫"
-            rank_display = f"⭐ **{rank}위**" if rank <= 10 else f"{rank}위"
-
+            rank_display = f"⭐ {rank}위" if rank <= 10 else f"{rank}위"
+            # EMA 상태 한 줄씩 띄우기 (4H, 1H)
+            ema_lines = ema_status.split("\n")
             message_lines += [
-                f"*{i}. {name}* {format_change_with_emoji(change)} / 거래대금: ({volume_str})",
-                f"{ema_status}",
+                f"{i}. {name} {format_change_with_emoji(change)} / 거래대금: ({volume_str})",
+                ema_lines[0],
+                ema_lines[1] if len(ema_lines) > 1 else "",
                 f"🔢 랭킹: {rank_display}",
                 "━━━━━━━━━━━━━━━━━━━"
             ]
@@ -286,18 +284,15 @@ def is_recent_20_50_golden_cross(inst_id, max_hours=20):
     df = get_ohlcv_okx(inst_id, bar='1H', limit=300)
     if df is None or len(df) < 50:
         return False
-
     close = df['c'].astype(float).values
     ema20 = pd.Series(close).ewm(span=20, adjust=False).mean()
     ema50 = pd.Series(close).ewm(span=50, adjust=False).mean()
-
     cross_index = None
     for i in range(1, len(close)):
         if ema20.iloc[i] > ema50.iloc[i] and ema20.iloc[i-1] <= ema50.iloc[i-1]:
             cross_index = i
     if cross_index is None:
         return False
-
     hours_since_cross = len(close) - 1 - cross_index
     return hours_since_cross <= max_hours
 
@@ -307,28 +302,30 @@ def main():
     total_count = len(all_ids)
     bullish_list = []
 
+    bullish_count_only = 0
+    for inst_id in all_ids:
+        if get_ema_bullish_status(inst_id):
+            bullish_count_only += 1
+        time.sleep(0.05)
+
     for inst_id in all_ids:
         is_bullish = get_ema_bullish_status(inst_id)
         if not is_bullish:
             continue
-
         if not is_recent_20_50_golden_cross(inst_id, max_hours=20):
             continue
-
         daily_change = calculate_daily_change(inst_id)
         if daily_change is None or daily_change <= 0:
             continue
-
         df_24h = get_ohlcv_okx(inst_id, bar="1D", limit=2)
         if df_24h is None:
             continue
-
         vol_24h = df_24h['volCcyQuote'].sum()
         bullish_list.append((inst_id, vol_24h, daily_change))
         time.sleep(0.1)
 
     top_bullish = sorted(bullish_list, key=lambda x: (x[1], x[2]), reverse=True)[:1]
-    send_ranked_volume_message(top_bullish, total_count, len(bullish_list))
+    send_ranked_volume_message(top_bullish, total_count, bullish_count_only)
 
 def run_scheduler():
     while True:
