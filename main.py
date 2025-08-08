@@ -229,10 +229,7 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count):
     btc_volume_str = format_volume_in_eok(btc_volume) or "🚫"
     btc_rank = volume_rank_map.get(btc_id, "N/A")
 
-    if isinstance(btc_rank, int) and btc_rank <= 3:
-        btc_rank_display = f"⭐ **{btc_rank}위**"
-    else:
-        btc_rank_display = f"{btc_rank}위"
+    btc_rank_display = f"⭐ **{btc_rank}위**" if isinstance(btc_rank, int) and btc_rank <= 3 else f"{btc_rank}위"
 
     message_lines += [
         "🎯 코인지수 비트코인",
@@ -252,7 +249,7 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count):
         filtered_top_bullish.append((inst_id, item[1], item[2], volume_1h, rank))
 
     if filtered_top_bullish:
-        message_lines.append("📈 [정배열 + 거래대금 TOP10 (1000만 이상)]")
+        message_lines.append("📈 [정배열 + 거래대금 TOP10 (1000만 이상) / 2-3 역배열]")
         for i, (inst_id, _, change, volume_1h, rank) in enumerate(filtered_top_bullish, 1):
             name = inst_id.replace("-USDT-SWAP", "")
             ema_status = get_all_timeframe_ema_status(inst_id)
@@ -266,7 +263,7 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count):
                 "━━━━━━━━━━━━━━━━━━━"
             ]
     else:
-        message_lines.append("📉 정배열 종목이 없습니다.")
+        message_lines.append("📉 조건을 만족하는 종목이 없습니다.")
 
     send_telegram_message("\n".join(message_lines))
 
@@ -281,8 +278,18 @@ def main():
         if not is_bullish:
             continue
 
+        df_1h = get_ohlcv_okx(inst_id, bar="1H", limit=50)
+        if df_1h is None:
+            continue
+        close_1h = df_1h['c'].astype(float).values
+
+        ema_2 = get_ema_with_retry(close_1h, 2)
+        ema_3 = get_ema_with_retry(close_1h, 3)
+        if ema_2 is None or ema_3 is None or ema_2 >= ema_3:
+            continue  # 2-3선 역배열이 아니면 제외
+
         daily_change = calculate_daily_change(inst_id)
-        if daily_change is None or daily_change <= 5:
+        if daily_change is None or daily_change <= 0:
             continue
 
         df_24h = get_ohlcv_okx(inst_id, bar="1D", limit=2)
@@ -293,7 +300,7 @@ def main():
         bullish_list.append((inst_id, vol_24h, daily_change))
         time.sleep(0.1)
 
-    top_bullish = sorted(bullish_list, key=lambda x: (x[1], x[2]), reverse=True)[:10]
+    top_bullish = sorted(bullish_list, key=lambda x: (x[1], x[2]), reverse=True)[:3]
     send_ranked_volume_message(top_bullish, total_count, len(bullish_list))
 
 def run_scheduler():
