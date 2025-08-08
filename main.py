@@ -289,7 +289,7 @@ def main():
             continue
 
         daily_change = calculate_daily_change(inst_id)
-        if daily_change is None or daily_change <= -100:
+        if daily_change is None or daily_change <= 0:
             continue
 
         df_24h = get_ohlcv_okx(inst_id, bar="1D", limit=2)
