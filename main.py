@@ -123,22 +123,20 @@ def get_ema_bullish_status_sequential(inst_id):
         logging.error(f"{inst_id} EMA 정배열 순차 필터 오류: {e}")
         return False
 
-def is_recent_20_50_golden_cross_and_still_bullish(df, limit=20):
+def is_recent_50_200_golden_cross_and_still_bullish(df, limit=10):
     try:
         closes = df['c'].astype(float)
-        ema_20 = closes.ewm(span=20, adjust=False).mean()
         ema_50 = closes.ewm(span=50, adjust=False).mean()
-        cross = (ema_20 > ema_50) & (ema_20.shift(1) <= ema_50.shift(1))
-
+        ema_200 = closes.ewm(span=200, adjust=False).mean()
+        cross = (ema_50 > ema_200) & (ema_50.shift(1) <= ema_200.shift(1))
         recent_crosses = cross.iloc[-limit:]
         if not recent_crosses.any():
             return False
-
         recent_cross_index = recent_crosses[recent_crosses].index[0]
-        still_bullish = (ema_20 > ema_50).loc[recent_cross_index:]
+        still_bullish = (ema_50 > ema_200).loc[recent_cross_index:]
         return still_bullish.all()
     except Exception as e:
-        logging.error(f"정배열 지속 필터 오류: {e}")
+        logging.error(f"50-200 정배열 지속 필터 오류: {e}")
         return False
 
 def get_ema_status_text(df, timeframe="1H"):
@@ -285,7 +283,7 @@ def main():
             continue
 
         df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=60)
-        if df_1h is None or not is_recent_20_50_golden_cross_and_still_bullish(df_1h, limit=15):
+        if df_1h is None or not is_recent_50_200_golden_cross_and_still_bullish(df_1h, limit=10):
             continue
 
         daily_change = calculate_daily_change(inst_id)
