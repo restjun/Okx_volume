@@ -291,7 +291,7 @@ def main():
             continue
 
         df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=60)
-        if df_1h is None or not is_recent_50_200_golden_cross_and_still_bullish(df_1h, limit=10):
+        if df_1h is None or not is_recent_50_200_golden_cross_and_still_bullish(df_1h, limit=15):
             continue
 
         daily_change = calculate_daily_change(inst_id)
