@@ -53,19 +53,6 @@ def get_ema_with_retry(close, period):
         time.sleep(0.5)
     return None
 
-def calculate_rsi(close, period=14):
-    if len(close) < period:
-        return None
-    series = pd.Series(close)
-    delta = series.diff()
-    gain = delta.where(delta > 0, 0)
-    loss = -delta.where(delta < 0, 0)
-    avg_gain = gain.rolling(window=period).mean()
-    avg_loss = loss.rolling(window=period).mean()
-    rs = avg_gain / avg_loss
-    rsi = 100 - (100 / (1 + rs))
-    return rsi.iloc[-1] if not rsi.empty else None
-
 def get_all_okx_swap_symbols():
     url = "https://www.okx.com/api/v5/public/instruments?instType=SWAP"
     response = retry_request(requests.get, url)
@@ -92,96 +79,49 @@ def get_ohlcv_okx(instId, bar='1H', limit=200):
         logging.error(f"{instId} OHLCV 파싱 실패: {e}")
         return None
 
-def get_ema_bullish_status_sequential(inst_id):
+def get_ema_bullish_status(inst_id):
     try:
-        df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=300)
-        if df_1d is None:
-            return False
-        close_1d = df_1d['c'].values
-        ema_1d = (get_ema_with_retry(close_1d, 5), get_ema_with_retry(close_1d, 20), get_ema_with_retry(close_1d, 50))
-        if None in ema_1d or not (ema_1d[0] > ema_1d[1] > ema_1d[2]):
-            return False
-
-        df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=300)
-        if df_4h is None:
-            return False
-        close_4h = df_4h['c'].values
-        ema_4h = (get_ema_with_retry(close_4h, 5), get_ema_with_retry(close_4h, 20), get_ema_with_retry(close_4h, 50))
-        if None in ema_4h or not (ema_4h[0] > ema_4h[1] > ema_4h[2]):
-            return False
-
         df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=300)
-        if df_1h is None:
-            return False
+        df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=300)
+        df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=300)
+        if df_1h is None or df_4h is None or df_1d is None:
+            return None
+
         close_1h = df_1h['c'].values
-        ema_1h = (get_ema_with_retry(close_1h, 5), get_ema_with_retry(close_1h, 20), get_ema_with_retry(close_1h, 50))
-        if None in ema_1h or not (ema_1h[0] > ema_1h[1] > ema_1h[2]):
-            return False
+        close_4h = df_4h['c'].values
+        close_1d = df_1d['c'].values
 
-        return True
+        def get_emas(close):
+            return (
+                get_ema_with_retry(close, 5),
+                get_ema_with_retry(close, 20),
+                get_ema_with_retry(close, 50),
+                get_ema_with_retry(close, 200)
+            )
+
+        ema_1h = get_emas(close_1h)
+        ema_4h = get_emas(close_4h)
+        ema_1d = get_emas(close_1d)
+
+        if None in ema_1h + ema_4h + ema_1d:
+            return None
+
+        def is_bullish(ema):
+            return ema[0] > ema[1] > ema[2] > ema[3]
+
+        return is_bullish(ema_1h) and is_bullish(ema_4h) and is_bullish(ema_1d)
+
     except Exception as e:
-        logging.error(f"{inst_id} EMA 정배열 순차 필터 오류: {e}")
-        return False
-
-# 기존 필터: 50-200 골든크로스
-def is_recent_50_200_golden_cross_and_still_bullish(df, limit=10):
-    try:
-        closes = df['c'].astype(float)
-        ema_50 = closes.ewm(span=50, adjust=False).mean()
-        ema_200 = closes.ewm(span=200, adjust=False).mean()
-
-        cross = (ema_50 > ema_200) & (ema_50.shift(1) <= ema_200.shift(1))
-        cross_indices = cross[cross].index
-
-        if cross_indices.empty:
-            return False
-
-        last_cross_idx = cross_indices[-1]
-        candles_since_cross = len(df) - df.index.get_loc(last_cross_idx) - 1
-
-        if candles_since_cross >= limit:
-            return False
-
-        still_bullish = (ema_50 > ema_200).iloc[last_cross_idx + 1:]
-        return still_bullish.all()
-    except Exception as e:
-        logging.error(f"50-200 정배열 지속 필터 오류: {e}")
-        return False
-
-# 새 필터: 20-50 골든크로스
-def is_recent_20_50_golden_cross_and_still_bullish(df, limit=10):
-    try:
-        closes = df['c'].astype(float)
-        ema_20 = closes.ewm(span=20, adjust=False).mean()
-        ema_50 = closes.ewm(span=50, adjust=False).mean()
-
-        cross = (ema_20 > ema_50) & (ema_20.shift(1) <= ema_50.shift(1))
-        cross_indices = cross[cross].index
-
-        if cross_indices.empty:
-            return False
-
-        last_cross_idx = cross_indices[-1]
-        candles_since_cross = len(df) - df.index.get_loc(last_cross_idx) - 1
-
-        if candles_since_cross >= limit:
-            return False
-
-        still_bullish = (ema_20 > ema_50).iloc[last_cross_idx + 1:]
-        return still_bullish.all()
-    except Exception as e:
-        logging.error(f"20-50 정배열 지속 필터 오류: {e}")
-        return False
+        logging.error(f"{inst_id} EMA 상태 계산 실패: {e}")
+        return None
 
 def get_ema_status_text(df, timeframe="1H"):
     close = df['c'].astype(float).values
+
     ema_5 = get_ema_with_retry(close, 5)
     ema_20 = get_ema_with_retry(close, 20)
     ema_50 = get_ema_with_retry(close, 50)
     ema_200 = get_ema_with_retry(close, 200)
-    ema_2 = get_ema_with_retry(close, 2)
-    ema_3 = get_ema_with_retry(close, 3)
-    rsi_14 = calculate_rsi(close, 14)
 
     def check(cond):
         if cond is None:
@@ -198,13 +138,17 @@ def get_ema_status_text(df, timeframe="1H"):
         check(safe_compare(ema_20, ema_50)),
         check(safe_compare(ema_50, ema_200))
     ]
-    short_term_status = check(safe_compare(ema_2, ema_3))
-    rsi_text = f"{rsi_14:.2f}" if rsi_14 is not None else "N/A"
 
-    return f"[{timeframe}] 📊: {' '.join(trend_status)} / 🔄 {short_term_status} / RSI: {rsi_text}"
+    if timeframe == "1H":
+        ema_2 = get_ema_with_retry(close, 2)
+        ema_3 = get_ema_with_retry(close, 3)
+        short_term_status = check(safe_compare(ema_2, ema_3))
+        return f"[{timeframe}] 📊: {' '.join(trend_status)} / 🔄 {short_term_status}"
+    else:
+        return f"[{timeframe}] 📊: {' '.join(trend_status)}"
 
 def get_all_timeframe_ema_status(inst_id):
-    timeframes = {'1D': 250, '4H': 300, '1H': 300, '15m': 300}
+    timeframes = {'1D': 250, '4H': 300, '1H': 300}
     status_lines = []
     for tf, limit in timeframes.items():
         df = get_ohlcv_okx(inst_id, bar=tf, limit=limit)
@@ -269,16 +213,31 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count):
         "━━━━━━━━━━━━━━━━━━━"
     ]
 
+    all_volume_data = []
+    for inst_id in get_all_okx_swap_symbols():
+        vol = calculate_1h_volume(inst_id)
+        all_volume_data.append((inst_id, vol))
+        time.sleep(0.05)
+
+    all_volume_data.sort(key=lambda x: x[1], reverse=True)
+    volume_rank_map = {inst_id: rank + 1 for rank, (inst_id, _) in enumerate(all_volume_data)}
+
     btc_id = "BTC-USDT-SWAP"
     btc_ema_status = get_all_timeframe_ema_status(btc_id)
     btc_change = calculate_daily_change(btc_id)
     btc_volume = calculate_1h_volume(btc_id)
     btc_volume_str = format_volume_in_eok(btc_volume) or "🚫"
+    btc_rank = volume_rank_map.get(btc_id, "N/A")
+
+    if isinstance(btc_rank, int) and btc_rank <= 3:
+        btc_rank_display = f"⭐ **{btc_rank}위**"
+    else:
+        btc_rank_display = f"{btc_rank}위"
 
     message_lines += [
-        "🎯 코인지수 비트코인 <최근 정배열>",
+        "🎯 코인지수 비트코인",
         "━━━━━━━━━━━━━━━━━━━",
-        f"💰 BTC {format_change_with_emoji(btc_change)} / 거래대금: ({btc_volume_str})",
+        f"💰 BTC {format_change_with_emoji(btc_change)} / 거래대금: ({btc_volume_str}) / 🔢 랭킹: {btc_rank_display}",
         f"{btc_ema_status}",
         "━━━━━━━━━━━━━━━━━━━"
     ]
@@ -287,22 +246,27 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count):
     for item in top_bullish:
         inst_id = item[0]
         volume_1h = calculate_1h_volume(inst_id)
-        if volume_1h < 1_000_000:
+        rank = volume_rank_map.get(inst_id)
+        if volume_1h < 1_000_000 or rank is None or rank > 10:
             continue
-        filtered_top_bullish.append((inst_id, item[1], item[2], volume_1h))
+        filtered_top_bullish.append((inst_id, item[1], item[2], volume_1h, rank))
 
     if filtered_top_bullish:
-        message_lines.append("📈 [정배열 + 거래대금 TOP (1000만 이상)]")
-        for i, (inst_id, _, change, volume_1h) in enumerate(filtered_top_bullish, 1):
+        message_lines.append("📈 [정배열 + 거래대금 TOP10 (1000만 이상)]")
+        for i, (inst_id, _, change, volume_1h, rank) in enumerate(filtered_top_bullish, 1):
             name = inst_id.replace("-USDT-SWAP", "")
             ema_status = get_all_timeframe_ema_status(inst_id)
             volume_str = format_volume_in_eok(volume_1h) or "🚫"
+            rank_display = f"⭐ **{rank}위**" if rank <= 10 else f"{rank}위"
+
             message_lines += [
-                f"*{i}. {name}* {format_change_with_emoji(change)} / 거래대금: ({volume_str})\n{ema_status}",
+                f"*{i}. {name}* {format_change_with_emoji(change)} / 거래대금: ({volume_str})",
+                f"{ema_status}",
+                f"🔢 랭킹: {rank_display}",
                 "━━━━━━━━━━━━━━━━━━━"
             ]
     else:
-        message_lines.append("📉 거래대금 정배열 종목이 없습니다.")
+        message_lines.append("📉 정배열 종목이 없습니다.")
 
     send_telegram_message("\n".join(message_lines))
 
@@ -313,15 +277,12 @@ def main():
     bullish_list = []
 
     for inst_id in all_ids:
-        if not get_ema_bullish_status_sequential(inst_id):
-            continue
-
-        df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=60)
-        if df_1h is None or not is_recent_20_50_golden_cross_and_still_bullish(df_1h, limit=30):
+        is_bullish = get_ema_bullish_status(inst_id)
+        if not is_bullish:
             continue
 
         daily_change = calculate_daily_change(inst_id)
-        if daily_change is None or daily_change <= 0:
+        if daily_change is None or daily_change <= 1:
             continue
 
         df_24h = get_ohlcv_okx(inst_id, bar="1D", limit=2)
@@ -332,7 +293,7 @@ def main():
         bullish_list.append((inst_id, vol_24h, daily_change))
         time.sleep(0.1)
 
-    top_bullish = sorted(bullish_list, key=lambda x: (x[1], x[2]), reverse=True)[:1]
+    top_bullish = sorted(bullish_list, key=lambda x: (x[1], x[2]), reverse=True)[:10]
     send_ranked_volume_message(top_bullish, total_count, len(bullish_list))
 
 def run_scheduler():
