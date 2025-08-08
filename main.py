@@ -123,19 +123,19 @@ def get_ema_bullish_status_sequential(inst_id):
         logging.error(f"{inst_id} EMA 정배열 순차 필터 오류: {e}")
         return False
 
-def is_recent_20_50_golden_cross_and_still_bullish(df, limit=15):
+def is_recent_20_50_golden_cross_and_still_bullish(df, limit=20):
     try:
         closes = df['c'].astype(float)
         ema_20 = closes.ewm(span=20, adjust=False).mean()
         ema_50 = closes.ewm(span=50, adjust=False).mean()
         cross = (ema_20 > ema_50) & (ema_20.shift(1) <= ema_50.shift(1))
 
-        recent_cross_index = cross.iloc[-limit:].idxmax()
-        if not cross.loc[recent_cross_index]:
+        recent_crosses = cross.iloc[-limit:]
+        if not recent_crosses.any():
             return False
 
-        # 이후에도 정배열 상태가 계속 유지됐는지 확인
-        still_bullish = (ema_20 > ema_50).iloc[recent_cross_index:]
+        recent_cross_index = recent_crosses[recent_crosses].index[0]
+        still_bullish = (ema_20 > ema_50).loc[recent_cross_index:]
         return still_bullish.all()
     except Exception as e:
         logging.error(f"정배열 지속 필터 오류: {e}")
