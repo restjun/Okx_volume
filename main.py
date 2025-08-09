@@ -140,7 +140,7 @@ def format_change_with_emoji(change):
         return f"🔴 ({change:.2f}%)"
 
 def calculate_1h_volume(inst_id):
-    df = get_ohlcv_okx(inst_id, bar="1H", limit=24)
+    df = get_ohlcv_okx(inst_id, bar="1H", limit=1)
     if df is None or len(df) < 1:
         return 0
     return df["volCcyQuote"].sum()
@@ -161,7 +161,7 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count, volume_r
         f"🔴 EMA 역배열: {bearish_count}개",
         f"💡 시장 상태: {market_status}",
         "━━━━━━━━━━━━━━━━━━━",
-        "🎯 코인지수 비트코인 + 거래대금 24시간",
+        "🎯 코인지수 비트코인 + 거래대금 1시간",
         "━━━━━━━━━━━━━━━━━━━",
     ]
 
@@ -213,12 +213,18 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count, volume_r
             ema_status = get_all_timeframe_ema_status(inst_id)
             volume_str = format_volume_in_eok(volume_1h) or "🚫"
             rank_display = f"⭐ {rank}위" if rank <= 3 else f"{rank}위"
-            ema_lines = [line.strip() for line in ema_status.split("\n")]  # ← split("") 수정
+            ema_lines = [line.strip() for line in ema_status.split("\n")]
+
+            # 랭킹 문구를 ema_lines[1] 바로 뒤에 붙여 한 줄로 표시
+            if len(ema_lines) > 1:
+                line2 = ema_lines[1] + f"    🔢 랭킹: {rank_display}"
+            else:
+                line2 = f"🔢 랭킹: {rank_display}"
+
             message_lines += [
                 f"{i}. {name} {format_change_with_emoji(change)} / 거래대금: ({volume_str})",
                 ema_lines[0] if len(ema_lines) > 0 else "",
-                ema_lines[1] if len(ema_lines) > 1 else "",
-                f"🔢 랭킹: {rank_display}",
+                line2,
                 "━━━━━━━━━━━━━━━━━━━"
             ]
     else:
