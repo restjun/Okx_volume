@@ -198,9 +198,9 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count, volume_r
     btc_rank_display = f"⭐  {btc_rank}위" if isinstance(btc_rank, int) and btc_rank <= 3 else f"{btc_rank}위"
 
     message_lines += [
-        f"💰 BTC {format_change_with_emoji(btc_change)} / 거래대금: ({btc_volume_str})",
-        btc_ema_status,
-        f"🔢  랭킹:  {btc_rank_display}",
+        f"💰 BTC {'🟢' if (btc_change is not None and btc_change > 0) else '🔴'} ({format_change_with_emoji(btc_change)}) / 거래대금: ({btc_volume_str})",
+        f"    {btc_ema_status.replace('[4H]  📊:', '[4H]  📊:  ')}",
+        f"    🔢  랭킹:  {btc_rank_display}",
         "━━━━━━━━━━━━━━━━━━━"
     ]
 
@@ -215,9 +215,9 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count, volume_r
 
         message_lines += [
             "🏆 실시간 거래대금 1위",
-            f"1. {top_name} {format_change_with_emoji(top_change)} / 거래대금: ({top_vol_str})",
-            top_ema_status,
-            f"🔢  랭킹:  {top_rank_display}",
+            f"    1. {top_name} {'🟢' if (top_change is not None and top_change > 0) else '🔴'} ({format_change_with_emoji(top_change)}) / 거래대금: ({top_vol_str})",
+            f"       {top_ema_status.replace('[4H]  📊:', '[4H]  📊:  ')}",
+            f"       🔢  랭킹:  {top_rank_display}",
             "━━━━━━━━━━━━━━━━━━━"
         ]
 
@@ -239,10 +239,10 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count, volume_r
             rank_display = f"⭐  {rank}위" if rank <= 3 else f"{rank}위"
             ema_lines = ema_status.split("\n")
             message_lines += [
-                f"{i}. {name} {format_change_with_emoji(change)} / 거래대금: ({volume_str})",
-                ema_lines[0],
-                ema_lines[1] if len(ema_lines) > 1 else "",
-                f"🔢  랭킹:  {rank_display}",
+                f"    {i}. {name} {'🟢' if change > 0 else '🔴'} ({format_change_with_emoji(change)}) / 거래대금: ({volume_str})",
+                f"       {ema_lines[0].replace('[4H]  📊:', '[4H]  📊:  ')}",
+                f"       {ema_lines[1] if len(ema_lines) > 1 else ''}",
+                f"       🔢  랭킹:  {rank_display}",
                 "━━━━━━━━━━━━━━━━━━━"
             ]
     else:
