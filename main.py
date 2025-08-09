@@ -202,7 +202,7 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count, volume_r
         inst_id = item[0]
         volume_1h = dict(all_volume_data).get(inst_id, 0)
         rank = volume_rank_map.get(inst_id)
-        if volume_1h < 1_000_000 or rank is None or rank > 30:
+        if volume_1h < 1_000_000 or rank is None or rank > 10:
             continue
         filtered_top_bullish.append((inst_id, item[1], item[2], volume_1h, rank))
 
@@ -293,7 +293,7 @@ def main():
         if ema_5 > ema_20 > ema_50 and vol_1h >= 1_000_000:
             bullish_list.append((inst_id, vol_1h, daily_change))
 
-    top_bullish = sorted(bullish_list, key=lambda x: (x[1], x[2]), reverse=True)[:30]
+    top_bullish = sorted(bullish_list, key=lambda x: (x[1], x[2]), reverse=True)[:3]
 
     all_volume_data = sorted(volume_map.items(), key=lambda x: x[1], reverse=True)
     volume_rank_map = {inst_id: rank + 1 for rank, (inst_id, _) in enumerate(all_volume_data)}
