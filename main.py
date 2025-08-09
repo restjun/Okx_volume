@@ -93,7 +93,8 @@ def get_ema_bullish_status(inst_id):
             return (
                 get_ema_with_retry(close, 5),
                 get_ema_with_retry(close, 20),
-                get_ema_with_retry(close, 50)
+                get_ema_with_retry(close, 50),
+                get_ema_with_retry(close, 200)
             )
 
         ema_1h = get_emas(close_1h)
@@ -103,7 +104,7 @@ def get_ema_bullish_status(inst_id):
             return None
 
         def is_bullish(ema):
-            return ema[0] > ema[1] > ema[2]
+            return ema[0] > ema[1] > ema[2] > ema[3]
 
         return is_bullish(ema_1h) and is_bullish(ema_4h)
 
@@ -113,10 +114,7 @@ def get_ema_bullish_status(inst_id):
 
 def get_ema_status_text(df, timeframe="1H"):
     close = df['c'].astype(float).values
-    ema_2 = get_ema_with_retry(close, 2)
-    ema_3 = get_ema_with_retry(close, 3)
     ema_5 = get_ema_with_retry(close, 5)
-    ema_10 = get_ema_with_retry(close, 10)
     ema_20 = get_ema_with_retry(close, 20)
     ema_50 = get_ema_with_retry(close, 50)
     ema_200 = get_ema_with_retry(close, 200)
@@ -132,17 +130,12 @@ def get_ema_status_text(df, timeframe="1H"):
         return a > b
 
     trend_status = [
-        check(safe_compare(ema_5, ema_10)),
-        check(safe_compare(ema_5, ema_20)),
-        check(safe_compare(ema_20, ema_50)),
-        check(safe_compare(ema_50, ema_200))
+        check(safe_compare(ema_5, ema_20)),  # 5-20
+        check(safe_compare(ema_20, ema_50)), # 20-50
+        check(safe_compare(ema_50, ema_200)) # 50-200
     ]
 
-    if timeframe == "1H":
-        short_term_status = check(safe_compare(ema_2, ema_3))
-        return f"[{timeframe}] 📊: {' '.join(trend_status)} / 🔄 {short_term_status}"
-    else:
-        return f"[{timeframe}] 📊: {' '.join(trend_status)}"
+    return f"[{timeframe}] 📊: {' '.join(trend_status)}"
 
 def get_all_timeframe_ema_status(inst_id):
     timeframes = {'4H': 300, '1H': 300}
@@ -265,7 +258,7 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count):
             name = inst_id.replace("-USDT-SWAP", "")
             ema_status = get_all_timeframe_ema_status(inst_id)
             volume_str = format_volume_in_eok(volume_1h) or "🚫"
-            rank_display = f"⭐ {rank}위" if isinstance(rank, int) and rank <= 3 else f"{rank}위"
+            rank_display = f"⭐ {rank}위" if rank <= 3 else f"{rank}위"  # ⭐ 3위까지 표시 수정
             ema_lines = ema_status.split("\n")
             message_lines += [
                 f"{i}. {name} {format_change_with_emoji(change)} / 거래대금: ({volume_str})",
@@ -279,39 +272,23 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count):
 
     send_telegram_message("\n".join(message_lines))
 
-def is_recent_20_50_golden_cross(inst_id, max_hours=24):
-    df = get_ohlcv_okx(inst_id, bar='1H', limit=300)
-    if df is None or len(df) < 50:
-        return False
-    close = df['c'].astype(float).values
-    ema20 = pd.Series(close).ewm(span=20, adjust=False).mean()
-    ema50 = pd.Series(close).ewm(span=50, adjust=False).mean()
-    cross_index = None
-    for i in range(1, len(close)):
-        if ema20.iloc[i] > ema50.iloc[i] and ema20.iloc[i-1] <= ema50.iloc[i-1]:
-            cross_index = i
-    if cross_index is None:
-        return False
-    hours_since_cross = len(close) - 1 - cross_index
-    return hours_since_cross <= max_hours
-
 def main():
     logging.info("📥 EMA 분석 시작")
     all_ids = get_all_okx_swap_symbols()
     total_count = len(all_ids)
+    bullish_count_only = 0
     bullish_list = []
 
-    bullish_count_only = 0
+    # 전체 정배열 개수 카운트
     for inst_id in all_ids:
         if get_ema_bullish_status(inst_id):
             bullish_count_only += 1
         time.sleep(0.05)
 
+    # 24시간 조건 및 골든크로스 조건 삭제 → 정배열 + 상승률 양수 필터링만
     for inst_id in all_ids:
         is_bullish = get_ema_bullish_status(inst_id)
         if not is_bullish:
-            continue
-        if not is_recent_20_50_golden_cross(inst_id, max_hours=20):
             continue
         daily_change = calculate_daily_change(inst_id)
         if daily_change is None or daily_change <= 0:
@@ -324,6 +301,7 @@ def main():
         time.sleep(0.1)
 
     top_bullish = sorted(bullish_list, key=lambda x: (x[1], x[2]), reverse=True)[:10]
+
     send_ranked_volume_message(top_bullish, total_count, bullish_count_only)
 
 def run_scheduler():
