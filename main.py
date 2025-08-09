@@ -53,14 +53,6 @@ def get_ema_with_retry(close, period):
         time.sleep(0.5)
     return None
 
-def get_all_okx_swap_symbols():
-    url = "https://www.okx.com/api/v5/public/instruments?instType=SWAP"
-    response = retry_request(requests.get, url)
-    if response is None:
-        return []
-    data = response.json().get("data", [])
-    return [item["instId"] for item in data if "USDT" in item["instId"]]
-
 def get_ohlcv_okx(instId, bar='1H', limit=200):
     url = f"https://www.okx.com/api/v5/market/candles?instId={instId}&bar={bar}&limit={limit}"
     response = retry_request(requests.get, url)
@@ -79,22 +71,35 @@ def get_ohlcv_okx(instId, bar='1H', limit=200):
         logging.error(f"{instId} OHLCV 파싱 실패: {e}")
         return None
 
+def get_all_okx_swap_symbols():
+    url = "https://www.okx.com/api/v5/public/instruments?instType=SWAP"
+    response = retry_request(requests.get, url)
+    if response is None:
+        return []
+    data = response.json().get("data", [])
+    return [item["instId"] for item in data if "USDT" in item["instId"]]
+
 def get_ema_bullish_status(inst_id):
-    df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=300)
-    if df_4h is None:
+    try:
+        df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=300)
+        if df_4h is None:
+            return False
+
+        close_4h = df_4h['c'].values
+
+        ema_5 = get_ema_with_retry(close_4h, 5)
+        ema_20 = get_ema_with_retry(close_4h, 20)
+        ema_50 = get_ema_with_retry(close_4h, 50)
+        ema_200 = get_ema_with_retry(close_4h, 200)
+
+        if None in [ema_5, ema_20, ema_50, ema_200]:
+            return False
+
+        return ema_5 > ema_20 > ema_50 > ema_200
+
+    except Exception as e:
+        logging.error(f"{inst_id} EMA 상태 계산 실패: {e}")
         return False
-
-    close = df_4h['c'].values
-
-    ema_5 = get_ema_with_retry(close, 5)
-    ema_20 = get_ema_with_retry(close, 20)
-    ema_50 = get_ema_with_retry(close, 50)
-    ema_200 = get_ema_with_retry(close, 200)
-
-    if None in [ema_5, ema_20, ema_50, ema_200]:
-        return False
-
-    return ema_5 > ema_20 > ema_50 > ema_200
 
 def get_ema_status_text_partial(df):
     close = df['c'].astype(float).values
@@ -171,9 +176,21 @@ def calculate_1h_volume(inst_id):
 
 def send_ranked_volume_message(top_bullish, total_count, bullish_count, volume_rank_map, all_volume_data):
     bearish_count = total_count - bullish_count
+    bullish_ratio = (bullish_count / total_count) * 100 if total_count > 0 else 0
+
+    # 시장 상태 판단
+    if bullish_ratio >= 70:
+        market_status = "🔥 장이 매우 좋음"
+    elif bullish_ratio >= 50:
+        market_status = "🙂 장이 보통"
+    else:
+        market_status = "⚠️ 장이 좋지 않음"
+
     message_lines = [
         f"🟢 EMA 정배열: {bullish_count}개",
         f"🔴 EMA 역배열: {bearish_count}개",
+        f"📊 정배열 비중: {bullish_ratio:.2f}%",
+        f"💡 시장상태: {market_status}",
         "━━━━━━━━━━━━━━━━━━━",
         "🎯 코인지수 비트코인 + 거래대금 24시간",
         "━━━━━━━━━━━━━━━━━━━",
@@ -254,32 +271,25 @@ def main():
         time.sleep(0.05)
 
     for inst_id in all_ids:
-        # EMA 상태 계산 (전체 정배열 개수 계산용)
         if get_ema_bullish_status(inst_id):
             bullish_count_only += 1
         time.sleep(0.05)
 
     for inst_id in all_ids:
-        # 정배열(5-20-50-200) 전체 조건 대신 부분적으로 EMA 상태 체크
         df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=300)
         if df_4h is None:
             continue
 
-        # 거래대금, 상승률 계산
         vol_1h = volume_map.get(inst_id, 0)
         daily_change = calculate_daily_change(inst_id)
         if daily_change is None or daily_change <= 0:
             continue
 
-        # EMA 상태 부분 표시 (부족해도 무시하지 않고 메시지에 포함)
-        ema_text = get_ema_status_text_partial(df_4h)
-
-        # 정배열 여부 판단 (5 > 20 > 50 기준만 간단 체크)
         ema_5 = get_ema_with_retry(df_4h['c'].values, 5)
         ema_20 = get_ema_with_retry(df_4h['c'].values, 20)
         ema_50 = get_ema_with_retry(df_4h['c'].values, 50)
         if ema_5 is None or ema_20 is None or ema_50 is None:
-            continue  # EMA 5-20-50 데이터 부족하면 무시
+            continue
 
         if ema_5 > ema_20 > ema_50 and vol_1h >= 1_000_000:
             bullish_list.append((inst_id, vol_1h, daily_change))
