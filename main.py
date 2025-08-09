@@ -174,7 +174,7 @@ def format_change_with_emoji(change):
         return f"🔴 ({change:.2f}%)"
 
 def calculate_1h_volume(inst_id):
-    df = get_ohlcv_okx(inst_id, bar="1H", limit=24)
+    df = get_ohlcv_okx(inst_id, bar="1H", limit=1)
     if df is None or len(df) < 1:
         return 0
     return df["volCcyQuote"].sum()
@@ -185,7 +185,7 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count, volume_r
         f"🟢 EMA 정배열: {bullish_count}개",
         f"🔴 EMA 역배열: {bearish_count}개",
         "━━━━━━━━━━━━━━━━━━━",
-        "🎯 코인지수 비트코인",
+        "🎯 코인지수 비트코인 + 거래대금 1시간",
         "━━━━━━━━━━━━━━━━━━━",
     ]
 
