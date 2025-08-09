@@ -253,7 +253,7 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count):
         filtered_top_bullish.append((inst_id, item[1], item[2], volume_1h, rank))
 
     if filtered_top_bullish:
-        message_lines.append("📈 [정배열 + 실시간 눌림 상위]")
+        message_lines.append("📈 [정배열 + 거래대금]")
         for i, (inst_id, _, change, volume_1h, rank) in enumerate(filtered_top_bullish, 1):
             name = inst_id.replace("-USDT-SWAP", "")
             ema_status = get_all_timeframe_ema_status(inst_id)
@@ -300,7 +300,7 @@ def main():
         bullish_list.append((inst_id, vol_24h, daily_change))
         time.sleep(0.1)
 
-    top_bullish = sorted(bullish_list, key=lambda x: (x[1], x[2]), reverse=True)[:10]
+    top_bullish = sorted(bullish_list, key=lambda x: (x[1], x[2]), reverse=True)[:3]
 
     send_ranked_volume_message(top_bullish, total_count, bullish_count_only)
 
