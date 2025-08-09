@@ -53,6 +53,14 @@ def get_ema_with_retry(close, period):
         time.sleep(0.5)
     return None
 
+def get_all_okx_swap_symbols():
+    url = "https://www.okx.com/api/v5/public/instruments?instType=SWAP"
+    response = retry_request(requests.get, url)
+    if response is None:
+        return []
+    data = response.json().get("data", [])
+    return [item["instId"] for item in data if "USDT" in item["instId"]]
+
 def get_ohlcv_okx(instId, bar='1H', limit=200):
     url = f"https://www.okx.com/api/v5/market/candles?instId={instId}&bar={bar}&limit={limit}"
     response = retry_request(requests.get, url)
@@ -70,6 +78,23 @@ def get_ohlcv_okx(instId, bar='1H', limit=200):
     except Exception as e:
         logging.error(f"{instId} OHLCV 파싱 실패: {e}")
         return None
+
+def get_ema_bullish_status(inst_id):
+    df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=300)
+    if df_4h is None:
+        return False
+
+    close = df_4h['c'].values
+
+    ema_5 = get_ema_with_retry(close, 5)
+    ema_20 = get_ema_with_retry(close, 20)
+    ema_50 = get_ema_with_retry(close, 50)
+    ema_200 = get_ema_with_retry(close, 200)
+
+    if None in [ema_5, ema_20, ema_50, ema_200]:
+        return False
+
+    return ema_5 > ema_20 > ema_50 > ema_200
 
 def get_ema_status_text_partial(df):
     close = df['c'].astype(float).values
@@ -230,8 +255,7 @@ def main():
 
     for inst_id in all_ids:
         # EMA 상태 계산 (전체 정배열 개수 계산용)
-        ema_status = get_ema_bullish_status(inst_id)
-        if ema_status:
+        if get_ema_bullish_status(inst_id):
             bullish_count_only += 1
         time.sleep(0.05)
 
@@ -249,6 +273,7 @@ def main():
 
         # EMA 상태 부분 표시 (부족해도 무시하지 않고 메시지에 포함)
         ema_text = get_ema_status_text_partial(df_4h)
+
         # 정배열 여부 판단 (5 > 20 > 50 기준만 간단 체크)
         ema_5 = get_ema_with_retry(df_4h['c'].values, 5)
         ema_20 = get_ema_with_retry(df_4h['c'].values, 20)
