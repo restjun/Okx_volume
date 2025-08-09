@@ -17,7 +17,6 @@ bot = telepot.Bot(telegram_bot_token)
 logging.basicConfig(level=logging.INFO)
 
 
-# 📌 텔레그램 전송
 def send_telegram_message(message):
     for retry_count in range(1, 11):
         try:
@@ -30,7 +29,6 @@ def send_telegram_message(message):
     logging.error("텔레그램 메시지 전송 실패: 최대 재시도 횟수 초과")
 
 
-# 📌 API 요청 재시도
 def retry_request(func, *args, **kwargs):
     for attempt in range(10):
         try:
@@ -45,7 +43,6 @@ def retry_request(func, *args, **kwargs):
     return None
 
 
-# 📌 EMA 계산
 def calculate_ema(close, period):
     if len(close) < period:
         return None
@@ -61,7 +58,6 @@ def get_ema_with_retry(close, period):
     return None
 
 
-# 📌 심볼 목록 가져오기
 def get_all_okx_swap_symbols():
     url = "https://www.okx.com/api/v5/public/instruments?instType=SWAP"
     response = retry_request(requests.get, url)
@@ -71,7 +67,6 @@ def get_all_okx_swap_symbols():
     return [item["instId"] for item in data if "USDT" in item["instId"]]
 
 
-# 📌 OHLCV 데이터 가져오기
 def get_ohlcv_okx(instId, bar='1H', limit=200):
     url = f"https://www.okx.com/api/v5/market/candles?instId={instId}&bar={bar}&limit={limit}"
     response = retry_request(requests.get, url)
@@ -91,45 +86,43 @@ def get_ohlcv_okx(instId, bar='1H', limit=200):
         return None
 
 
-# 📌 정배열 체크 (1H + 4H + 1D 모두)
 def get_ema_bullish_status(inst_id):
+    """
+    1H, 4H, 1D 모두 EMA 5 > 10 > 20 > 50 정배열 조건 확인
+    """
     try:
-        df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=300)
-        df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=300)
-        df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=300)
-
-        if df_1h is None or df_4h is None or df_1d is None:
-            return None
-
-        close_1h = df_1h['c'].values
-        close_4h = df_4h['c'].values
-        close_1d = df_1d['c'].values
+        # 3개 타임프레임 데이터 한 번에 호출
+        df_dict = {}
+        for tf in ['1H', '4H', '1D']:
+            df = get_ohlcv_okx(inst_id, bar=tf, limit=300)
+            if df is None:
+                return None
+            df_dict[tf] = df['c'].values
 
         def get_emas(close):
             return (
                 get_ema_with_retry(close, 5),
+                get_ema_with_retry(close, 10),
                 get_ema_with_retry(close, 20),
                 get_ema_with_retry(close, 50)
             )
 
-        ema_1h = get_emas(close_1h)
-        ema_4h = get_emas(close_4h)
-        ema_1d = get_emas(close_1d)
+        emas = {tf: get_emas(df_dict[tf]) for tf in df_dict}
 
-        if None in ema_1h + ema_4h + ema_1d:
+        # None 있는지 체크
+        if any(None in emas[tf] for tf in emas):
             return None
 
         def is_bullish(ema):
-            return ema[0] > ema[1] > ema[2]
+            return ema[0] > ema[1] > ema[2] > ema[3]
 
-        return is_bullish(ema_1h) and is_bullish(ema_4h) and is_bullish(ema_1d)
+        return all(is_bullish(emas[tf]) for tf in emas)
 
     except Exception as e:
         logging.error(f"{inst_id} EMA 상태 계산 실패: {e}")
         return None
 
 
-# 📌 EMA 상태 텍스트
 def get_ema_status_text(df, timeframe="1H"):
     close = df['c'].astype(float).values
     ema_2 = get_ema_with_retry(close, 2)
@@ -152,10 +145,12 @@ def get_ema_status_text(df, timeframe="1H"):
 
     trend_status = [
         check(safe_compare(ema_5, ema_10)),
-        check(safe_compare(ema_5, ema_20)),
+        check(safe_compare(ema_10, ema_20)),
         check(safe_compare(ema_20, ema_50)),
-        check(safe_compare(ema_50, ema_200))
     ]
+
+    # 50-200은 기존 유지
+    trend_status.append(check(safe_compare(ema_50, ema_200)))
 
     if timeframe == "1H":
         short_term_status = check(safe_compare(ema_2, ema_3))
@@ -164,7 +159,6 @@ def get_ema_status_text(df, timeframe="1H"):
         return f"[{timeframe}] 📊: {' '.join(trend_status)}"
 
 
-# 📌 전체 타임프레임 EMA 상태
 def get_all_timeframe_ema_status(inst_id):
     timeframes = {'4H': 300, '1H': 300, '1D': 300}
     status_lines = []
@@ -179,7 +173,6 @@ def get_all_timeframe_ema_status(inst_id):
     return "\n".join(status_lines)
 
 
-# 📌 하루 변동률 계산
 def calculate_daily_change(inst_id):
     df = get_ohlcv_okx(inst_id, bar="1H", limit=48)
     if df is None or len(df) < 24:
@@ -201,7 +194,6 @@ def calculate_daily_change(inst_id):
         return None
 
 
-# 📌 숫자 포맷
 def format_volume_in_eok(volume):
     try:
         eok = int(volume // 1_000_000)
@@ -221,7 +213,6 @@ def format_change_with_emoji(change):
         return f"🔴 ({change:.2f}%)"
 
 
-# 📌 거래대금 계산
 def calculate_1h_volume(inst_id):
     df = get_ohlcv_okx(inst_id, bar="1H", limit=24)
     if df is None or len(df) < 1:
@@ -229,7 +220,6 @@ def calculate_1h_volume(inst_id):
     return df["volCcyQuote"].sum()
 
 
-# 📌 최근 20-50 EMA 골든크로스 체크
 def is_recent_20_50_golden_cross(inst_id, max_hours=20):
     df = get_ohlcv_okx(inst_id, bar='1H', limit=300)
     if df is None or len(df) < 50:
@@ -247,7 +237,6 @@ def is_recent_20_50_golden_cross(inst_id, max_hours=20):
     return hours_since_cross <= max_hours
 
 
-# 📌 메시지 전송
 def send_ranked_volume_message(top_bullish, total_count, bullish_count):
     bearish_count = total_count - bullish_count
     message_lines = [
@@ -329,14 +318,13 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count):
     send_telegram_message("\n".join(message_lines))
 
 
-# 📌 메인 로직
 def main():
     logging.info("📥 EMA 분석 시작")
     all_ids = get_all_okx_swap_symbols()
     total_count = len(all_ids)
+    bullish_count_only = 0
     bullish_list = []
 
-    bullish_count_only = 0
     for inst_id in all_ids:
         if get_ema_bullish_status(inst_id):
             bullish_count_only += 1
@@ -361,7 +349,6 @@ def main():
     send_ranked_volume_message(top_bullish, total_count, bullish_count_only)
 
 
-# 📌 스케줄러
 def run_scheduler():
     while True:
         schedule.run_pending()
