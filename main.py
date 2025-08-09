@@ -71,36 +71,6 @@ def get_ohlcv_okx(instId, bar='1H', limit=200):
         logging.error(f"{instId} OHLCV 파싱 실패: {e}")
         return None
 
-def get_all_okx_swap_symbols():
-    url = "https://www.okx.com/api/v5/public/instruments?instType=SWAP"
-    response = retry_request(requests.get, url)
-    if response is None:
-        return []
-    data = response.json().get("data", [])
-    return [item["instId"] for item in data if "USDT" in item["instId"]]
-
-def get_ema_bullish_status(inst_id):
-    try:
-        df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=300)
-        if df_4h is None:
-            return False
-
-        close_4h = df_4h['c'].values
-
-        ema_5 = get_ema_with_retry(close_4h, 5)
-        ema_20 = get_ema_with_retry(close_4h, 20)
-        ema_50 = get_ema_with_retry(close_4h, 50)
-        ema_200 = get_ema_with_retry(close_4h, 200)
-
-        if None in [ema_5, ema_20, ema_50, ema_200]:
-            return False
-
-        return ema_5 > ema_20 > ema_50 > ema_200
-
-    except Exception as e:
-        logging.error(f"{inst_id} EMA 상태 계산 실패: {e}")
-        return False
-
 def get_ema_status_text_partial(df):
     close = df['c'].astype(float).values
 
@@ -176,21 +146,20 @@ def calculate_1h_volume(inst_id):
 
 def send_ranked_volume_message(top_bullish, total_count, bullish_count, volume_rank_map, all_volume_data):
     bearish_count = total_count - bullish_count
-    bullish_ratio = (bullish_count / total_count) * 100 if total_count > 0 else 0
+    bullish_ratio = bullish_count / total_count if total_count > 0 else 0
 
-    # 시장 상태 판단
-    if bullish_ratio >= 70:
-        market_status = "🔥 장이 매우 좋음"
-    elif bullish_ratio >= 50:
-        market_status = "🙂 장이 보통"
+    # 장 상태 텍스트
+    if bullish_ratio >= 0.7:
+        market_status = "📈 장이 좋음 (강세장)"
+    elif bullish_ratio >= 0.4:
+        market_status = "🔶 장 보통 (횡보장)"
     else:
-        market_status = "⚠️ 장이 좋지 않음"
+        market_status = "📉 장이 안좋음 (약세장)"
 
     message_lines = [
         f"🟢 EMA 정배열: {bullish_count}개",
         f"🔴 EMA 역배열: {bearish_count}개",
-        f"📊 정배열 비중: {bullish_ratio:.2f}%",
-        f"💡 시장상태: {market_status}",
+        f"💡 시장 상태: {market_status}",
         "━━━━━━━━━━━━━━━━━━━",
         "🎯 코인지수 비트코인 + 거래대금 24시간",
         "━━━━━━━━━━━━━━━━━━━",
@@ -202,12 +171,12 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count, volume_r
     btc_volume = dict(all_volume_data).get(btc_id, 0)
     btc_volume_str = format_volume_in_eok(btc_volume) or "🚫"
     btc_rank = volume_rank_map.get(btc_id, "N/A")
-    btc_rank_display = f"⭐  {btc_rank}위" if isinstance(btc_rank, int) and btc_rank <= 3 else f"{btc_rank}위"
+    btc_rank_display = f"⭐ {btc_rank}위" if isinstance(btc_rank, int) and btc_rank <= 3 else f"{btc_rank}위"
 
     message_lines += [
         f"💰 BTC {format_change_with_emoji(btc_change)} / 거래대금: ({btc_volume_str})",
-        btc_ema_status,
-        f"🔢  랭킹:  {btc_rank_display}",
+        btc_ema_status.strip(),
+        f"🔢 랭킹: {btc_rank_display}",
         "━━━━━━━━━━━━━━━━━━━"
     ]
 
@@ -218,13 +187,13 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count, volume_r
         top_name = top_inst_id.replace("-USDT-SWAP", "")
         top_vol_str = format_volume_in_eok(top_vol) or "🚫"
         top_rank = volume_rank_map.get(top_inst_id, "N/A")
-        top_rank_display = f"⭐  {top_rank}위" if isinstance(top_rank, int) and top_rank <= 3 else f"{top_rank}위"
+        top_rank_display = f"⭐ {top_rank}위" if isinstance(top_rank, int) and top_rank <= 3 else f"{top_rank}위"
 
         message_lines += [
             "🏆 실시간 거래대금 1위",
             f"1. {top_name} {format_change_with_emoji(top_change)} / 거래대금: ({top_vol_str})",
-            top_ema_status,
-            f"🔢  랭킹:  {top_rank_display}",
+            top_ema_status.strip(),
+            f"🔢 랭킹: {top_rank_display}",
             "━━━━━━━━━━━━━━━━━━━"
         ]
 
@@ -243,19 +212,49 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count, volume_r
             name = inst_id.replace("-USDT-SWAP", "")
             ema_status = get_all_timeframe_ema_status(inst_id)
             volume_str = format_volume_in_eok(volume_1h) or "🚫"
-            rank_display = f"⭐  {rank}위" if rank <= 3 else f"{rank}위"
-            ema_lines = ema_status.split("\n")
+            rank_display = f"⭐ {rank}위" if rank <= 3 else f"{rank}위"
+            ema_lines = [line.strip() for line in ema_status.split("\n")]
             message_lines += [
                 f"{i}. {name} {format_change_with_emoji(change)} / 거래대금: ({volume_str})",
                 ema_lines[0],
                 ema_lines[1] if len(ema_lines) > 1 else "",
-                f"🔢  랭킹:  {rank_display}",
+                f"🔢 랭킹: {rank_display}",
                 "━━━━━━━━━━━━━━━━━━━"
             ]
     else:
         message_lines.append("📉 정배열 종목이 없습니다.")
 
     send_telegram_message("\n".join(message_lines))
+
+def get_all_okx_swap_symbols():
+    url = "https://www.okx.com/api/v5/public/instruments?instType=SWAP"
+    response = retry_request(requests.get, url)
+    if response is None:
+        return []
+    data = response.json().get("data", [])
+    return [item["instId"] for item in data if "USDT" in item["instId"]]
+
+def get_ema_bullish_status(inst_id):
+    try:
+        df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=300)
+        if df_4h is None:
+            return False
+
+        close_4h = df_4h['c'].values
+
+        ema_5 = get_ema_with_retry(close_4h, 5)
+        ema_20 = get_ema_with_retry(close_4h, 20)
+        ema_50 = get_ema_with_retry(close_4h, 50)
+        ema_200 = get_ema_with_retry(close_4h, 200)
+
+        if None in [ema_5, ema_20, ema_50, ema_200]:
+            return False
+
+        return ema_5 > ema_20 > ema_50 > ema_200
+
+    except Exception as e:
+        logging.error(f"{inst_id} EMA 상태 계산 실패: {e}")
+        return False
 
 def main():
     logging.info("📥 EMA 분석 시작")
