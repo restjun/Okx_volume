@@ -62,6 +62,7 @@ def get_ohlcv_okx(instId, bar='1H', limit=200):
         df = pd.DataFrame(response.json()['data'], columns=[
             'ts', 'o', 'h', 'l', 'c', 'vol', 'volCcy', 'volCcyQuote', 'confirm'
         ])
+        df['ts'] = pd.to_numeric(df['ts'], errors='coerce')  # ts를 숫자로 변환 (경고 제거)
         df['c'] = df['c'].astype(float)
         df['o'] = df['o'].astype(float)
         df['vol'] = df['vol'].astype(float)
@@ -106,7 +107,7 @@ def calculate_daily_change(inst_id):
     if df is None or len(df) < 24:
         return None
     try:
-        df['datetime'] = pd.to_datetime(df['ts'], unit='ms')
+        df['datetime'] = pd.to_datetime(pd.to_numeric(df['ts']), unit='ms')  # 경고 제거
         df['datetime_kst'] = df['datetime'] + pd.Timedelta(hours=9)
         df.set_index('datetime_kst', inplace=True)
         daily = df.resample('1D', offset='9h').agg({
@@ -148,7 +149,6 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count, volume_r
     bearish_count = total_count - bullish_count
     bullish_ratio = bullish_count / total_count if total_count > 0 else 0
 
-    # 장 상태 텍스트
     if bullish_ratio >= 0.7:
         market_status = "📈 장이 좋음 (강세장)"
     elif bullish_ratio >= 0.4:
@@ -213,10 +213,10 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count, volume_r
             ema_status = get_all_timeframe_ema_status(inst_id)
             volume_str = format_volume_in_eok(volume_1h) or "🚫"
             rank_display = f"⭐ {rank}위" if rank <= 3 else f"{rank}위"
-            ema_lines = [line.strip() for line in ema_status.split("")]
+            ema_lines = [line.strip() for line in ema_status.split("\n")]  # ← split("") 수정
             message_lines += [
                 f"{i}. {name} {format_change_with_emoji(change)} / 거래대금: ({volume_str})",
-                ema_lines[0],
+                ema_lines[0] if len(ema_lines) > 0 else "",
                 ema_lines[1] if len(ema_lines) > 1 else "",
                 f"🔢 랭킹: {rank_display}",
                 "━━━━━━━━━━━━━━━━━━━"
