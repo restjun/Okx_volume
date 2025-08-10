@@ -155,21 +155,6 @@ def get_all_okx_swap_symbols():
     data = response.json().get("data", [])
     return [item["instId"] for item in data if "USDT" in item["instId"]]
 
-def send_ranked_volume_message_no_bullish(top_list, total_count, volume_rank_map):
-    message_lines = []
-    for i, (inst_id, vol_1h, daily_change, ema_status) in enumerate(top_list, 1):
-        name = inst_id.replace("-USDT-SWAP", "")
-        vol_str = format_volume_in_eok(vol_1h) or "🚫"
-        rank = volume_rank_map.get(inst_id, "N/A")
-        rank_display = f"⭐ {rank}위" if isinstance(rank, int) and rank <= 3 else f"{rank}위"
-
-        message_lines.append(f"{i}. {name} {format_change_with_emoji(daily_change)} / 거래대금: ({vol_str})")
-        message_lines.append(ema_status.strip())
-        message_lines.append(f"🔢 랭킹: {rank_display}")
-        message_lines.append("━━━━━━━━━━━━━━━━━━━")
-
-    send_telegram_message("\n".join(message_lines))
-
 def main():
     logging.info("📥 EMA 분석 시작")
     all_ids = get_all_okx_swap_symbols()
@@ -184,7 +169,17 @@ def main():
     all_volume_data = sorted(volume_map.items(), key=lambda x: x[1], reverse=True)
     volume_rank_map = {inst_id: rank + 1 for rank, (inst_id, _) in enumerate(all_volume_data)}
 
-    top_volume_list = all_volume_data[:3]  # 상위 3개만
+    # 비트코인 정보 별도 추출
+    btc_id = "BTC-USDT-SWAP"
+    btc_vol = volume_map.get(btc_id, 0)
+    btc_change = calculate_daily_change(btc_id)
+    btc_ema_status = get_all_timeframe_ema_status(btc_id)
+    btc_rank = volume_rank_map.get(btc_id, "N/A")
+    btc_rank_display = f"⭐ {btc_rank}위" if isinstance(btc_rank, int) and btc_rank <= 3 else f"{btc_rank}위"
+    btc_vol_str = format_volume_in_eok(btc_vol) or "🚫"
+
+    # 거래대금 상위 3개 (비트코인 제외)
+    top_volume_list = [item for item in all_volume_data if item[0] != btc_id][:3]
 
     top_list = []
     for inst_id, vol_1h in top_volume_list:
@@ -195,7 +190,28 @@ def main():
         ema_status = get_all_timeframe_ema_status(inst_id)
         top_list.append((inst_id, vol_1h, daily_change, ema_status))
 
-    send_ranked_volume_message_no_bullish(top_list, total_count, volume_rank_map)
+    # 메시지 조립
+    message_lines = [
+        f"💰 BTC {format_change_with_emoji(btc_change)} / 거래대금: ({btc_vol_str})",
+        btc_ema_status.strip(),
+        f"🔢 랭킹: {btc_rank_display}",
+        "━━━━━━━━━━━━━━━━━━━",
+        "거래대금 상위 3종목",
+        "━━━━━━━━━━━━━━━━━━━"
+    ]
+
+    for i, (inst_id, vol_1h, daily_change, ema_status) in enumerate(top_list, 1):
+        name = inst_id.replace("-USDT-SWAP", "")
+        vol_str = format_volume_in_eok(vol_1h) or "🚫"
+        rank = volume_rank_map.get(inst_id, "N/A")
+        rank_display = f"⭐ {rank}위" if isinstance(rank, int) and rank <= 3 else f"{rank}위"
+
+        message_lines.append(f"{i}. {name} {format_change_with_emoji(daily_change)} / 거래대금: ({vol_str})")
+        message_lines.append(ema_status.strip())
+        message_lines.append(f"🔢 랭킹: {rank_display}")
+        message_lines.append("━━━━━━━━━━━━━━━━━━━")
+
+    send_telegram_message("\n".join(message_lines))
 
 def run_scheduler():
     while True:
