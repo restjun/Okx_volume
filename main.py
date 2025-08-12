@@ -98,7 +98,7 @@ def get_ema_status_text_partial_daily(df):
     status_10_15 = check(safe_compare(ema_10, ema_15))
     status_15_20 = check(safe_compare(ema_15, ema_20))
 
-    return f"[1D]  📊:  {status_5_10}{status_10_15}{status_15_20}      {status_2_3} "
+    return f"[1D]  📊:  {status_5_10}{status_10_15}{status_15_20}      "
 
 def get_all_timeframe_ema_status(inst_id):
     df = get_ohlcv_okx(inst_id, bar='1D', limit=300)
@@ -133,7 +133,7 @@ def get_ema_status_text_partial_4h(df):
     status_10_15 = check(safe_compare(ema_10, ema_15))
     status_15_20 = check(safe_compare(ema_15, ema_20))
 
-    return f"[4H]  📊:  {status_5_10}{status_10_15}{status_15_20}"
+    return f"[4H]  📊:  {status_5_10}{status_10_15}{status_15_20}    {status_2_3} "
 
 def get_all_timeframe_ema_status_4h(inst_id):
     df = get_ohlcv_okx(inst_id, bar='4H', limit=300)
