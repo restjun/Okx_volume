@@ -128,12 +128,12 @@ def get_ema_status_text_partial_4h(df):
             return None
         return a > b
 
-    status_2_3 = check(safe_compare(ema_2, ema_3))
+    status_1_3 = check(safe_compare(ema_1, ema_3))
     status_5_10 = check(safe_compare(ema_5, ema_10))
     status_10_15 = check(safe_compare(ema_10, ema_15))
     status_15_20 = check(safe_compare(ema_15, ema_20))
 
-    return f"[4H]  📊:  {status_5_10}{status_10_15}{status_15_20}    {status_2_3} "
+    return f"[4H]  📊:  {status_5_10}{status_10_15}{status_15_20}    {status_1_3} "
 
 def get_all_timeframe_ema_status_4h(inst_id):
     df = get_ohlcv_okx(inst_id, bar='4H', limit=300)
@@ -304,7 +304,7 @@ def main():
 
         vol_1h = volume_map.get(inst_id, 0)
         daily_change = calculate_daily_change(inst_id)
-        if daily_change is None or daily_change <= -100:
+        if daily_change is None or daily_change <= 0:
             continue
 
         ema_5 = get_ema_with_retry(df_1d['c'].values, 5)
@@ -317,7 +317,7 @@ def main():
         if ema_5 > ema_10 > ema_15 > ema_20 and vol_1h >= 1_000_000:
             bullish_list.append((inst_id, vol_1h, daily_change))
 
-    top_bullish = sorted(bullish_list, key=lambda x: (x[1], x[2]), reverse=True)[:3]
+    top_bullish = sorted(bullish_list, key=lambda x: (x[1], x[2]), reverse=True)[:10]
 
     all_volume_data = sorted(volume_map.items(), key=lambda x: x[1], reverse=True)
     volume_rank_map = {inst_id: rank + 1 for rank, (inst_id, _) in enumerate(all_volume_data)}
