@@ -309,7 +309,7 @@ def main():
 
         ema_5 = get_ema_with_retry(df_1d['c'].values, 5)
         ema_10 = get_ema_with_retry(df_1d['c'].values, 10)
-        ema_15 = get_ema_with_retry(df_1d['c'].values, 150)
+        ema_15 = get_ema_with_retry(df_1d['c'].values, 15)
         ema_20 = get_ema_with_retry(df_1d['c'].values, 20)
         if None in [ema_5, ema_10, ema_15, ema_20]:
             continue
