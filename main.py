@@ -304,12 +304,12 @@ def main():
 
         vol_1h = volume_map.get(inst_id, 0)
         daily_change = calculate_daily_change(inst_id)
-        if daily_change is None or daily_change <= 0:
+        if daily_change is None or daily_change <= -10:
             continue
 
         ema_5 = get_ema_with_retry(df_1d['c'].values, 5)
         ema_10 = get_ema_with_retry(df_1d['c'].values, 10)
-        ema_15 = get_ema_with_retry(df_1d['c'].values, 15)
+        ema_15 = get_ema_with_retry(df_1d['c'].values, 150)
         ema_20 = get_ema_with_retry(df_1d['c'].values, 20)
         if None in [ema_5, ema_10, ema_15, ema_20]:
             continue
