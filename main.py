@@ -84,9 +84,8 @@ def get_ema_status_text_partial_daily(inst_id):
         ema_50 = get_ema_with_retry(close_prices, 50)
         ema_200 = get_ema_with_retry(close_prices, 200)
 
-        if None in [ema_5, ema_20, ema_50, ema_200]:
+        if None in [ema_5,ema_20, ema_50, ema_200]:
             return "[1D] ❌ 데이터 부족"
-
         status_5_20 = "🟩" if ema_5 > ema_20 else "🟥"
         status_20_50 = "🟩" if ema_20 > ema_50 else "🟥"
         status_50_200 = "🟩" if ema_50 > ema_200 else "🟥"
@@ -112,9 +111,9 @@ def get_ema_status_text_partial_4h(inst_id):
         ema_50 = get_ema_with_retry(close_prices, 50)
         ema_200 = get_ema_with_retry(close_prices, 200)
 
-        if None in [ema_5, ema_20, ema_50, ema_200]:
+        if None in [ema_20, ema_50, ema_200]:
             return "[4H] ❌ 데이터 부족"
-
+            
         status_5_20 = "🟩" if ema_5 > ema_20 else "🟥"
         status_20_50 = "🟩" if ema_20 > ema_50 else "🟥"
         status_50_200 = "🟩" if ema_50 > ema_200 else "🟥"
@@ -190,7 +189,7 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count, volume_r
         f"🔴 EMA 역배열: {bearish_count}개",
         f"💡 시장 상태: {market_status}",
         "━━━━━━━━━━━━━━━━━━━",
-        "🎯 코인지수 비트코인 + [5_20/20_50/50_200]",
+        "🎯 코인지수 비트코인 + [20_50/50_200]",
         "━━━━━━━━━━━━━━━━━━━",
     ]
 
@@ -252,11 +251,12 @@ def get_ema_bullish_status(inst_id):
         if df_1d is None:
             return False
         close_1d = df_1d['c'].values
+        ema_20 = get_ema_with_retry(close_1d, 20)
         ema_50 = get_ema_with_retry(close_1d, 50)
         ema_200 = get_ema_with_retry(close_1d, 200)
-        if None in [ema_50, ema_200]:
+        if None in [ema_20, ema_50, ema_200]:
             return False
-        return ema_50 > ema_200
+        return ema_20 > ema_50 and ema_50 > ema_200
     except Exception as e:
         logging.error(f"{inst_id} EMA 상태 계산 실패: {e}")
         return False
@@ -288,11 +288,12 @@ def main():
         daily_change = calculate_daily_change(inst_id)
         if daily_change is None or daily_change <= 0:
             continue
+        ema_20 = get_ema_with_retry(df_1d['c'].values, 20)
         ema_50 = get_ema_with_retry(df_1d['c'].values, 50)
         ema_200 = get_ema_with_retry(df_1d['c'].values, 200)
-        if None in [ema_50, ema_200]:
+        if None in [ema_20, ema_50, ema_200]:
             continue
-        if ema_50 > ema_200 and vol_1h >= 1_000_000:
+        if ema_20 > ema_50 and ema_50 > ema_200 and vol_1h >= 1_000_000:
             bullish_list.append((inst_id, vol_1h, daily_change))
 
     top_bullish = sorted(bullish_list, key=lambda x: (x[1], x[2]), reverse=True)[:10]
