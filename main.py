@@ -128,12 +128,12 @@ def get_ema_status_text_partial_4h(df):
             return None
         return a > b
 
-    status_2_3 = check(safe_compare(ema_2, ema_3))
+    status_1_3 = check(safe_compare(ema_1, ema_3))
     status_5_10 = check(safe_compare(ema_5, ema_10))
     status_10_15 = check(safe_compare(ema_10, ema_15))
     status_15_20 = check(safe_compare(ema_15, ema_20))
 
-    return f"[4H]  📊:  {status_5_10}{status_10_15}{status_15_20}    {status_2_3} "
+    return f"[4H]  📊:  {status_5_10}{status_10_15}{status_15_20}    {status_1_3} "
 
 def get_all_timeframe_ema_status_4h(inst_id):
     df = get_ohlcv_okx(inst_id, bar='4H', limit=300)
