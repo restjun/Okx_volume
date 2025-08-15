@@ -282,7 +282,7 @@ def main():
     all_volume_data = sorted(volume_map.items(), key=lambda x: x[1], reverse=True)
     volume_rank_map = {inst_id: rank + 1 for rank, (inst_id, _) in enumerate(all_volume_data)}
 
-    top_bullish = sorted(bullish_list, key=lambda x: (x[1], x[2]), reverse=True)[:3]
+    top_bullish = sorted(bullish_list, key=lambda x: (x[1], x[2]), reverse=True)[:10]
     send_ranked_volume_message(top_bullish, total_count, bullish_count_only, volume_rank_map, all_volume_data)
 
 def run_scheduler():
