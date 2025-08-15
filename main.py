@@ -71,55 +71,42 @@ def get_ohlcv_okx(instId, bar='1H', limit=200):
         logging.error(f"{instId} OHLCV 파싱 실패: {e}")
         return None
 
-# ==== EMA 상태 메시지(1D) ====
-def get_ema_status_text_partial_daily(inst_id):
+# === 1D + 4H EMA 상태 한 줄 출력 ===
+def get_ema_status_line(inst_id):
     try:
-        df = get_ohlcv_okx(inst_id, bar='1D', limit=300)
-        if df is None:
-            return "[1D] ❌ 불러오기 실패"
+        # --- 1D EMA (5-20) ---
+        df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=300)
+        if df_1d is None:
+            daily_status = "[1D] ❌"
+        else:
+            ema_5_1d = get_ema_with_retry(df_1d['c'].values, 5)
+            ema_20_1d = get_ema_with_retry(df_1d['c'].values, 20)
+            if None in [ema_5_1d, ema_20_1d]:
+                daily_status = "[1D] ❌"
+            else:
+                status_5_20_1d = "🟩" if ema_5_1d > ema_20_1d else "🟥"
+                daily_status = f"[1D] 📊: {status_5_20_1d}"
 
-        close_prices = df['c'].values
-        ema_5 = get_ema_with_retry(close_prices, 5)
-        ema_20 = get_ema_with_retry(close_prices, 20)
-        if None in [ema_5, ema_20]:
-            return "[1D] ❌ 데이터 부족"
+        # --- 4H EMA (5-20, 1-3) ---
+        df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=300)
+        if df_4h is None:
+            fourh_status = "[4H] ❌"
+        else:
+            ema_1_4h = get_ema_with_retry(df_4h['c'].values, 1)
+            ema_3_4h = get_ema_with_retry(df_4h['c'].values, 3)
+            ema_5_4h = get_ema_with_retry(df_4h['c'].values, 5)
+            ema_20_4h = get_ema_with_retry(df_4h['c'].values, 20)
+            if None in [ema_1_4h, ema_3_4h, ema_5_4h, ema_20_4h]:
+                fourh_status = "[4H] ❌"
+            else:
+                status_5_20_4h = "🟩" if ema_5_4h > ema_20_4h else "🟥"
+                status_1_3_4h = "🟩" if ema_1_4h > ema_3_4h else "🟥"
+                fourh_status = f"[4H] 📊: {status_5_20_4h} {status_1_3_4h}"
 
-        status_5_20 = "🟩" if ema_5 > ema_20 else "🟥"
-
-        return f"[1D] 📊: {status_5_20}"
+        return f"{daily_status} | {fourh_status}"
     except Exception as e:
         logging.error(f"{inst_id} EMA 상태 계산 실패: {e}")
-        return "[1D] ❌ 오류"
-
-def get_all_timeframe_ema_status(inst_id):
-    return get_ema_status_text_partial_daily(inst_id)
-
-# ==== EMA 상태 메시지(4H) ====
-def get_ema_status_text_partial_4h(inst_id):
-    try:
-        df = get_ohlcv_okx(inst_id, bar='4H', limit=300)
-        if df is None:
-            return "[4H] ❌ 불러오기 실패"
-
-        close_prices = df['c'].values
-        ema_1 = get_ema_with_retry(close_prices, 1)
-        ema_3 = get_ema_with_retry(close_prices, 3)
-        ema_5 = get_ema_with_retry(close_prices, 5)
-        ema_20 = get_ema_with_retry(close_prices, 20)
-
-        if None in [ema_1, ema_3, ema_5, ema_20]:
-            return "[4H] ❌ 데이터 부족"
-            
-        status_1_3 = "🟥" if ema_1 < ema_3 else "🟩"
-        status_5_20 = "🟩" if ema_5 > ema_20 else "🟥"
-
-        return f"[4H] 📊: {status_1_3}/{status_5_20}"
-    except Exception as e:
-        logging.error(f"{inst_id} EMA 상태 계산 실패: {e}")
-        return "[4H] ❌ 오류"
-
-def get_all_timeframe_ema_status_4h(inst_id):
-    return get_ema_status_text_partial_4h(inst_id)
+        return "[1D/4H] ❌"
 
 def calculate_daily_change(inst_id):
     df = get_ohlcv_okx(inst_id, bar="1H", limit=48)
@@ -168,41 +155,6 @@ def calculate_1h_volume(inst_id):
         return 0
     return df["volCcyQuote"].sum()
 
-# ==== 정배열 기준 수정 ====
-def get_ema_bullish_status(inst_id):
-    """일봉 5-20 정배열"""
-    try:
-        df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=300)
-        if df_1d is None:
-            return False
-        close_1d = df_1d['c'].values
-        ema_5 = get_ema_with_retry(close_1d, 5)
-        ema_20 = get_ema_with_retry(close_1d, 20)
-        if None in [ema_5, ema_20]:
-            return False
-        return ema_5 > ema_20
-    except Exception as e:
-        logging.error(f"{inst_id} EMA 상태 계산 실패: {e}")
-        return False
-
-def get_ema_bullish_status_4h(inst_id):
-    """4시간 1-3 역배열 + 5-20 정배열"""
-    try:
-        df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=300)
-        if df_4h is None:
-            return False
-        close_4h = df_4h['c'].values
-        ema_1 = get_ema_with_retry(close_4h, 1)
-        ema_3 = get_ema_with_retry(close_4h, 3)
-        ema_5 = get_ema_with_retry(close_4h, 5)
-        ema_20 = get_ema_with_retry(close_4h, 20)
-        if None in [ema_1, ema_3, ema_5, ema_20]:
-            return False
-        return (ema_1 < ema_3) and (ema_5 > ema_20)
-    except Exception as e:
-        logging.error(f"{inst_id} 4H EMA 상태 계산 실패: {e}")
-        return False
-
 def send_ranked_volume_message(top_bullish, total_count, bullish_count, volume_rank_map, all_volume_data):
     bearish_count = total_count - bullish_count
     bullish_ratio = bullish_count / total_count if total_count > 0 else 0
@@ -219,13 +171,12 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count, volume_r
         f"🔴 EMA 역배열: {bearish_count}개",
         f"💡 시장 상태: {market_status}",
         "━━━━━━━━━━━━━━━━━━━",
-        "🎯 코인지수 비트코인 + [일봉 정배열 5-20 / 4H 1-3역 + 5-20]",
+        "🎯 코인지수 비트코인 + [일봉 5-20] + [4시간 5-20 & 1-3]",
         "━━━━━━━━━━━━━━━━━━━",
     ]
 
     btc_id = "BTC-USDT-SWAP"
-    btc_ema_status = get_all_timeframe_ema_status(btc_id)
-    btc_ema_status_4h = get_all_timeframe_ema_status_4h(btc_id)
+    btc_ema_status_line = get_ema_status_line(btc_id)
     btc_change = calculate_daily_change(btc_id)
     btc_volume = dict(all_volume_data).get(btc_id, 0)
     btc_volume_str = format_volume_in_eok(btc_volume) or "🚫"
@@ -234,11 +185,33 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count, volume_r
 
     message_lines += [
         f"💰 BTC {format_change_with_emoji(btc_change)} / 거래대금: ({btc_volume_str})",
-        btc_ema_status.strip(),
-        btc_ema_status_4h.strip(),
+        btc_ema_status_line,
         f"🔢 랭킹: {btc_rank_display}",
         "━━━━━━━━━━━━━━━━━━━"
     ]
+
+    filtered_top_bullish = []
+    for item in top_bullish:
+        inst_id = item[0]
+        volume_1h = dict(all_volume_data).get(inst_id, 0)
+        rank = volume_rank_map.get(inst_id)
+        if volume_1h < 1_000_000 or rank is None or rank > 10:
+            continue
+        filtered_top_bullish.append((inst_id, item[1], item[2], volume_1h, rank))
+
+    if filtered_top_bullish:
+        message_lines.append("📈 정배열 + 실시간 거래대금 상위")
+        for i, (inst_id, _, change, volume_1h, rank) in enumerate(filtered_top_bullish, 1):
+            name = inst_id.replace("-USDT-SWAP", "")
+            ema_status_line = get_ema_status_line(inst_id)
+            volume_str = format_volume_in_eok(volume_1h) or "🚫"
+            rank_display = f"⭐ {rank}위" if rank <= 3 else f"{rank}위"
+            message_lines.append(f"{i}. {name} {format_change_with_emoji(change)} / 거래대금: ({volume_str})")
+            message_lines.append(ema_status_line)
+            message_lines.append(f"🔢 랭킹: {rank_display}")
+            message_lines.append("━━━━━━━━━━━━━━━━━━━")
+    else:
+        message_lines.append("📉 정배열 종목이 없습니다.")
 
     send_telegram_message("\n".join(message_lines))
 
@@ -250,26 +223,67 @@ def get_all_okx_swap_symbols():
     data = response.json().get("data", [])
     return [item["instId"] for item in data if "USDT" in item["instId"]]
 
+def get_ema_bullish_status(inst_id):
+    try:
+        df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=300)
+        if df_1d is None:
+            return False
+        ema_5_1d = get_ema_with_retry(df_1d['c'].values, 5)
+        ema_20_1d = get_ema_with_retry(df_1d['c'].values, 20)
+        if None in [ema_5_1d, ema_20_1d]:
+            return False
+
+        df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=300)
+        if df_4h is None:
+            return False
+        ema_5_4h = get_ema_with_retry(df_4h['c'].values, 5)
+        ema_20_4h = get_ema_with_retry(df_4h['c'].values, 20)
+        if None in [ema_5_4h, ema_20_4h]:
+            return False
+
+        return (ema_5_1d > ema_20_1d) and (ema_5_4h > ema_20_4h)
+    except Exception as e:
+        logging.error(f"{inst_id} EMA 상태 계산 실패: {e}")
+        return False
+
+# ===== 수정된 main() =====
 def main():
     logging.info("📥 EMA 분석 시작")
     all_ids = get_all_okx_swap_symbols()
-    total_count = len(all_ids)
-
-    bullish_count_only = 0
-    bullish_list = []
     volume_map = {}
 
+    # 거래대금 먼저 계산
     for inst_id in all_ids:
         vol_1h = calculate_1h_volume(inst_id)
         volume_map[inst_id] = vol_1h
         time.sleep(0.05)
 
-    for inst_id in all_ids:
-        if get_ema_bullish_status(inst_id) and get_ema_bullish_status_4h(inst_id):
-            bullish_count_only += 1
-        time.sleep(0.05)
+    # 거래대금 TOP 10 추출
+    top_10_ids = [inst_id for inst_id, _ in sorted(volume_map.items(), key=lambda x: x[1], reverse=True)[:10]]
+    total_count = len(top_10_ids)  # 전체 카운트는 TOP10 기준
 
-    send_ranked_volume_message([], total_count, bullish_count_only, {}, volume_map)
+    bullish_count_only = 0
+    bullish_list = []
+
+    # 상위 10개만 EMA 체크
+    for inst_id in top_10_ids:
+        if get_ema_bullish_status(inst_id):
+            bullish_count_only += 1
+    time.sleep(0.05)
+
+    for inst_id in top_10_ids:
+        vol_1h = volume_map.get(inst_id, 0)
+        daily_change = calculate_daily_change(inst_id)
+        if daily_change is None or daily_change <= -100:
+            continue
+        if get_ema_bullish_status(inst_id) and vol_1h >= 1_000_000:
+            bullish_list.append((inst_id, vol_1h, daily_change))
+
+    all_volume_data = sorted(volume_map.items(), key=lambda x: x[1], reverse=True)
+    volume_rank_map = {inst_id: rank + 1 for rank, (inst_id, _) in enumerate(all_volume_data)}
+
+    top_bullish = sorted(bullish_list, key=lambda x: (x[1], x[2]), reverse=True)[:3]
+    send_ranked_volume_message(top_bullish, total_count, bullish_count_only, volume_rank_map, all_volume_data)
 
 def run_scheduler():
     while True:
