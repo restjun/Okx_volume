@@ -206,7 +206,7 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count, volume_r
         inst_id = item[0]
         volume_1h = dict(all_volume_data).get(inst_id, 0)
         rank = volume_rank_map.get(inst_id)
-        if volume_1h < 1_000_000 or rank is None or rank > 20:
+        if volume_1h < 1_000_000 or rank is None or rank > 10:
             continue
         filtered_top_bullish.append((inst_id, item[1], item[2], volume_1h, rank))
 
@@ -272,7 +272,7 @@ def main():
         time.sleep(0.05)
 
     # 거래대금 TOP 10 추출
-    top_10_ids = [inst_id for inst_id, _ in sorted(volume_map.items(), key=lambda x: x[1], reverse=True)[:10]]
+    top_10_ids = [inst_id for inst_id, _ in sorted(volume_map.items(), key=lambda x: x[1], reverse=True)[:20]]
     total_count = len(top_10_ids)  # 전체 카운트는 TOP10 기준
 
     bullish_count_only = 0
