@@ -74,10 +74,13 @@ def get_ohlcv_okx(instId, bar='1H', limit=200):
 # === 1D + 4H EMA 상태 한 줄 출력 ===
 def get_ema_status_line(inst_id):
     try:
+        rocket_flag = False  # 🚀 표시 조건
+
         # --- 1D EMA (5-10) ---
         df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=300)
         if df_1d is None:
             daily_status = "[1D] ❌"
+            ema_5_1d, ema_10_1d = None, None
         else:
             ema_5_1d = get_ema_with_retry(df_1d['c'].values, 5)
             ema_10_1d = get_ema_with_retry(df_1d['c'].values, 10)
@@ -91,6 +94,7 @@ def get_ema_status_line(inst_id):
         df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=300)
         if df_4h is None:
             fourh_status = "[4H] ❌"
+            ema_5_4h, ema_10_4h, ema_1_4h, ema_3_4h = None, None, None, None
         else:
             ema_1_4h = get_ema_with_retry(df_4h['c'].values, 1)
             ema_3_4h = get_ema_with_retry(df_4h['c'].values, 3)
@@ -103,7 +107,14 @@ def get_ema_status_line(inst_id):
                 status_1_3_4h = "🟩" if ema_1_4h > ema_3_4h else "🟥"
                 fourh_status = f"[4H] 📊: {status_5_10_4h} {status_1_3_4h}"
 
-        return f"{daily_status} | {fourh_status}"
+        # 🚀 조건: 일봉 5>10 정배열 + 4시간 5>10 정배열 + 4시간 1<3 역배열
+        if (ema_5_1d and ema_10_1d and ema_5_1d > ema_10_1d) and \
+           (ema_5_4h and ema_10_4h and ema_5_4h > ema_10_4h) and \
+           (ema_1_4h and ema_3_4h and ema_1_4h < ema_3_4h):
+            rocket_flag = True
+
+        rocket_symbol = " 🚀" if rocket_flag else ""
+        return f"{daily_status} | {fourh_status}{rocket_symbol}"
     except Exception as e:
         logging.error(f"{inst_id} EMA 상태 계산 실패: {e}")
         return "[1D/4H] ❌"
