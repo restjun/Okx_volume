@@ -90,27 +90,27 @@ def get_ema_status_line(inst_id):
                 status_5_10_1d = "🟩" if ema_5_1d > ema_10_1d else "🟥"
                 daily_status = f"[1D] 📊: {status_5_10_1d}"
 
-        # --- 4H EMA (5-10, 2-3) ---
+        # --- 4H EMA (5-10, 1-3) ---
         df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=300)
         if df_4h is None:
             fourh_status = "[4H] ❌"
-            ema_2_4h, ema_3_4h, ema_5_4h, ema_10_4h = None, None, None, None
+            ema_5_4h, ema_10_4h, ema_1_4h, ema_3_4h = None, None, None, None
         else:
-            ema_2_4h = get_ema_with_retry(df_4h['c'].values, 2)
+            ema_1_4h = get_ema_with_retry(df_4h['c'].values, 1)
             ema_3_4h = get_ema_with_retry(df_4h['c'].values, 3)
             ema_5_4h = get_ema_with_retry(df_4h['c'].values, 5)
             ema_10_4h = get_ema_with_retry(df_4h['c'].values, 10)
-            if None in [ema_2_4h, ema_3_4h, ema_5_4h, ema_10_4h]:
+            if None in [ema_1_4h, ema_3_4h, ema_5_4h, ema_10_4h]:
                 fourh_status = "[4H] ❌"
             else:
                 status_5_10_4h = "🟩" if ema_5_4h > ema_10_4h else "🟥"
-                status_2_3_4h = "🟩" if ema_2_4h > ema_3_4h else "🟥"
-                fourh_status = f"[4H] 📊: {status_5_10_4h} {status_2_3_4h}"
+                status_1_3_4h = "🟩" if ema_1_4h > ema_3_4h else "🟥"
+                fourh_status = f"[4H] 📊: {status_5_10_4h} {status_1_3_4h}"
 
-        # 🚀 조건: 일봉 5>10 정배열 + 4시간 5>10 정배열 + 4시간 2<3 역배열
+        # 🚀 조건: 일봉 5>10 정배열 + 4시간 5>10 정배열 + 4시간 1<3 역배열
         if (ema_5_1d and ema_10_1d and ema_5_1d > ema_10_1d) and \
            (ema_5_4h and ema_10_4h and ema_5_4h > ema_10_4h) and \
-           (ema_2_4h and ema_3_4h and ema_2_4h < ema_3_4h):
+           (ema_1_4h and ema_3_4h and ema_1_4h < ema_3_4h):
             rocket_flag = True
 
         rocket_symbol = " 🚀" if rocket_flag else ""
@@ -161,7 +161,7 @@ def format_change_with_emoji(change):
         return f"🔴 ({change:.2f}%)"
 
 def calculate_1h_volume(inst_id):
-    df = get_ohlcv_okx(inst_id, bar="1H", limit=4)
+    df = get_ohlcv_okx(inst_id, bar="1H", limit=24)
     if df is None or len(df) < 1:
         return 0
     return df["volCcyQuote"].sum()
@@ -206,7 +206,7 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count, volume_r
         inst_id = item[0]
         volume_1h = dict(all_volume_data).get(inst_id, 0)
         rank = volume_rank_map.get(inst_id)
-        if volume_1h < 1_000_000 or rank is None or rank > 10:
+        if volume_1h < 1_000_000 or rank is None or rank > 20:
             continue
         filtered_top_bullish.append((inst_id, item[1], item[2], volume_1h, rank))
 
@@ -272,7 +272,7 @@ def main():
         time.sleep(0.05)
 
     # 거래대금 TOP 10 추출
-    top_10_ids = [inst_id for inst_id, _ in sorted(volume_map.items(), key=lambda x: x[1], reverse=True)[:10]]
+    top_10_ids = [inst_id for inst_id, _ in sorted(volume_map.items(), key=lambda x: x[1], reverse=True)[:20]]
     total_count = len(top_10_ids)  # 전체 카운트는 TOP10 기준
 
     bullish_count_only = 0
@@ -309,4 +309,4 @@ def start_scheduler():
     threading.Thread(target=run_scheduler, daemon=True).start()
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8000)  
