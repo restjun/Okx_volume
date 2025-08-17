@@ -93,7 +93,7 @@ def get_ema_status_line(inst_id):
                 condition_1d_5_20 = ema_5_1d > ema_20_1d
                 status_5_10_1d = "🟩" if condition_1d_5_10 else "🟥"
                 status_5_20_1d = "🟩" if condition_1d_5_20 else "🟥"
-                daily_status = f"[1D] 📊: {status_5_10_1d}/{status_5_20_1d}"
+                daily_status = f"[1D] 📊: {status_5_10_1d}"
 
         # --- 4H EMA (5-10, 1-3, 5-20) ---
         df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=300)
@@ -120,13 +120,13 @@ def get_ema_status_line(inst_id):
                 status_5_10_4h = "🟩" if condition_5_10_4h else "🟥"
                 status_1_3_4h = "🟩" if ema_1_4h > ema_3_4h else "🟥"
                 status_5_20_4h = "🟩" if condition_5_20_4h else "🟥"
-                fourh_status = f"[4H] 📊: {status_5_10_4h} {status_1_3_4h}/{status_5_20_4h}"
+                fourh_status = f"[4H] 📊: {status_5_10_4h} {status_1_3_4h}"
 
         # --- 조건 체크 후 🚀 붙이기 ---
         rocket = ""
         if condition_1d_5_10 and condition_5_10_4h and condition_1_3_4h:
             rocket = " 🚀🚀"   # 기존 조건
-        elif condition_1d_5_20 and condition_5_20_4h:
+        elif condition_1d_5_10 and condition_5_10_4h:
             rocket = " 🚀"     # 새로운 조건
 
         return f"{daily_status} | {fourh_status}{rocket}"
