@@ -122,7 +122,7 @@ def get_ema_status_line(inst_id):
 
         # --- 조건 체크 후 🚀 붙이기 ---
         rocket = ""
-        if condition_1d_5_20 and condition_5_20_4h and condition_2_3_4h:
+        if condition_1d_5_20 and condition_5_20_4h and condition_1_3_4h:
             rocket = " 🚀🚀🚀"   # 기존 조건
         elif condition_1d_5_20 and condition_5_20_4h:
             rocket = " "     # 새로운 조건
