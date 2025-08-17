@@ -193,11 +193,24 @@ def send_top10_volume_message(top_10_ids, volume_map):
         "━━━━━━━━━━━━━━━━━━━",
     ]
 
+    # ✅ 비트코인 상태는 무조건 상단에 표시
+    btc_id = "BTC-USDT-SWAP"
+    btc_change = calculate_daily_change(btc_id)
+    btc_volume = volume_map.get(btc_id, 0)
+    btc_volume_str = format_volume_in_eok(btc_volume) or "🚫"
+    btc_status_line, _ = get_ema_status_line(btc_id)
+
+    message_lines.append(f"BTC {format_change_with_emoji(btc_change)} / 거래대금: ({btc_volume_str})")
+    message_lines.append(btc_status_line)
+    message_lines.append("━━━━━━━━━━━━━━━━━━━")
+
+    # ✅ 나머지 코인 (조건 충족시만)
     for i, inst_id in enumerate(top_10_ids, 1):
+        if inst_id == btc_id:
+            continue  # BTC는 이미 표시했으므로 건너뜀
         name = inst_id.replace("-USDT-SWAP", "")
         ema_status_line, rocket_ok = get_ema_status_line(inst_id)
 
-        # 🚀 조건이 아닌 코인은 제외
         if not rocket_ok:
             continue
 
@@ -209,11 +222,11 @@ def send_top10_volume_message(top_10_ids, volume_map):
         message_lines.append(ema_status_line)
         message_lines.append("━━━━━━━━━━━━━━━━━━━")
 
-    # 조건을 만족한 코인만 있을 때 메시지 전송
-    if len(message_lines) > 2:
+    # 메시지 전송
+    if len(message_lines) > 3:
         send_telegram_message("\n".join(message_lines))
     else:
-        logging.info("🚀 조건 만족 코인 없음 - 메시지 미전송")
+        logging.info("🚀 조건 만족 코인 없음 (BTC만 표시됨)")
 
 def get_all_okx_swap_symbols():
     url = "https://www.okx.com/api/v5/public/instruments?instType=SWAP"
