@@ -99,30 +99,30 @@ def get_ema_status_line(inst_id):
         if df_4h is None:
             fourh_status = "[4H] ❌"
             condition_5_10_4h = False
-            condition_1_3_4h = False
+            condition_2_3_4h = False
             condition_5_20_4h = False
         else:
-            ema_1_4h = get_ema_with_retry(df_4h['c'].values, 1)
+            ema_2_4h = get_ema_with_retry(df_4h['c'].values, 2)
             ema_3_4h = get_ema_with_retry(df_4h['c'].values, 3)
             ema_5_4h = get_ema_with_retry(df_4h['c'].values, 5)
             ema_10_4h = get_ema_with_retry(df_4h['c'].values, 10)
             ema_20_4h = get_ema_with_retry(df_4h['c'].values, 20)
-            if None in [ema_1_4h, ema_3_4h, ema_5_4h, ema_10_4h, ema_20_4h]:
+            if None in [ema_2_4h, ema_3_4h, ema_5_4h, ema_10_4h, ema_20_4h]:
                 fourh_status = "[4H] ❌"
                 condition_5_10_4h = False
-                condition_1_3_4h = False
+                condition_2_3_4h = False
                 condition_5_20_4h = False
             else:
                 condition_5_10_4h = ema_5_4h > ema_10_4h
-                condition_1_3_4h = ema_1_4h < ema_3_4h  # 역배열 조건
+                condition_2_3_4h = ema_2_4h < ema_3_4h  # 역배열 조건
                 condition_5_20_4h = ema_5_4h > ema_20_4h
-                status_1_3_4h = "🟩" if ema_1_4h > ema_3_4h else "🟥"
+                status_2_3_4h = "🟩" if ema_2_4h > ema_3_4h else "🟥"
                 status_5_20_4h = "🟩" if condition_5_20_4h else "🟥"
-                fourh_status = f"[4H] 📊: {status_5_20_4h} {status_1_3_4h}"
+                fourh_status = f"[4H] 📊: {status_5_20_4h} {status_2_3_4h}"
 
         # --- 조건 체크 후 🚀 붙이기 ---
         rocket = ""
-        if condition_1d_5_20 and condition_5_20_4h and condition_1_3_4h:
+        if condition_1d_5_20 and condition_5_20_4h and condition_2_3_4h:
             rocket = " 🚀🚀🚀"   # 기존 조건
         elif condition_1d_5_20 and condition_5_20_4h:
             rocket = " "     # 새로운 조건
