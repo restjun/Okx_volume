@@ -71,24 +71,21 @@ def get_ohlcv_okx(instId, bar='1H', limit=200):
         logging.error(f"{instId} OHLCV 파싱 실패: {e}")
         return None
 
-# === 1D + 4H + 1H EMA 상태 한 줄 출력 ===
+# === 1D + 4H + 1H EMA 상태 한 줄 출력 (일봉은 표시만, 로켓 조건에는 미반영) ===
 def get_ema_status_line(inst_id):
     try:
         # --- 1D EMA (5-20) ---
         df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=300)
         if df_1d is None:
             daily_status = "[1D] ❌"
-            daily_ok = False
         else:
             ema_5_1d = get_ema_with_retry(df_1d['c'].values, 5)
             ema_20_1d = get_ema_with_retry(df_1d['c'].values, 20)
             if None in [ema_5_1d, ema_20_1d]:
                 daily_status = "[1D] ❌"
-                daily_ok = False
             else:
                 status_5_20_1d = "🟩" if ema_5_1d > ema_20_1d else "🟥"
                 daily_status = f"[1D] 📊: {status_5_20_1d}"
-                daily_ok = ema_5_1d > ema_20_1d
 
         # --- 4H EMA (5-20) ---
         df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=300)
@@ -112,12 +109,10 @@ def get_ema_status_line(inst_id):
             return f"{daily_status} | {fourh_status} | [1H] ❌", False
 
         closes = df_1h['c'].values
-
         ema_1_now = get_ema_with_retry(closes, 1)
         ema_3_now = get_ema_with_retry(closes, 3)
         ema_5_now = get_ema_with_retry(closes, 5)
         ema_20_now = get_ema_with_retry(closes, 20)
-
         ema_1_prev = get_ema_with_retry(closes[:-1], 1)
         ema_3_prev = get_ema_with_retry(closes[:-1], 3)
 
@@ -128,10 +123,10 @@ def get_ema_status_line(inst_id):
             status_1_3_1h = "🟩" if ema_1_now > ema_3_now else "🟥"
             oneh_status = f"[1H] 📊: {status_5_20_1h} {status_1_3_1h}"
 
-            # 🚀 조건 체크
+            # 🚀 조건 (일봉 EMA 제거)
             rocket_condition = (
                 ema_1_prev <= ema_3_prev and ema_1_now > ema_3_now 
-                and daily_ok and fourh_ok and (ema_5_now > ema_20_now)
+                and fourh_ok and (ema_5_now > ema_20_now)
             )
             rocket = " 🚀🚀🚀" if rocket_condition else ""
 
@@ -193,7 +188,6 @@ def send_top10_volume_message(top_10_ids, volume_map):
         "━━━━━━━━━━━━━━━━━━━",
     ]
 
-    # ✅ 비트코인 상태는 무조건 상단에 표시
     btc_id = "BTC-USDT-SWAP"
     btc_change = calculate_daily_change(btc_id)
     btc_volume = volume_map.get(btc_id, 0)
@@ -204,13 +198,11 @@ def send_top10_volume_message(top_10_ids, volume_map):
     message_lines.append(btc_status_line)
     message_lines.append("━━━━━━━━━━━━━━━━━━━")
 
-    # ✅ 나머지 코인 (조건 충족시만)
     for i, inst_id in enumerate(top_10_ids, 1):
         if inst_id == btc_id:
-            continue  # BTC는 이미 표시했으므로 건너뜀
+            continue
         name = inst_id.replace("-USDT-SWAP", "")
         ema_status_line, rocket_ok = get_ema_status_line(inst_id)
-
         if not rocket_ok:
             continue
 
@@ -222,7 +214,6 @@ def send_top10_volume_message(top_10_ids, volume_map):
         message_lines.append(ema_status_line)
         message_lines.append("━━━━━━━━━━━━━━━━━━━")
 
-    # 메시지 전송
     if len(message_lines) > 3:
         send_telegram_message("\n".join(message_lines))
     else:
@@ -236,22 +227,17 @@ def get_all_okx_swap_symbols():
     data = response.json().get("data", [])
     return [item["instId"] for item in data if "USDT" in item["instId"]]
 
-# ===== main() =====
 def main():
     logging.info("📥 거래대금 분석 시작")
     all_ids = get_all_okx_swap_symbols()
     volume_map = {}
 
-    # 거래대금 먼저 계산
     for inst_id in all_ids:
         vol_1h = calculate_1h_volume(inst_id)
         volume_map[inst_id] = vol_1h
         time.sleep(0.05)
 
-    # 거래대금 TOP 10 추출
     top_10_ids = [inst_id for inst_id, _ in sorted(volume_map.items(), key=lambda x: x[1], reverse=True)[:10]]
-
-    # 메시지 전송
     send_top10_volume_message(top_10_ids, volume_map)
 
 def run_scheduler():
