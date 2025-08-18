@@ -133,12 +133,12 @@ def get_ema_status_line(inst_id):
 
             # 🚀 롱 조건
             rocket_condition = (
-                ema_3_prev <= ema_5_prev and ema_3_now > ema_5_now
+                ema_3_prev >= ema_5_prev and ema_3_now < ema_5_now
                 and fourh_ok_long and (ema_5_now > ema_10_now)
             )
             # ⚡ 숏 조건
             short_condition = (
-                ema_3_prev >= ema_5_prev and ema_3_now < ema_5_now
+                ema_3_prev <= ema_5_prev and ema_3_now > ema_5_now
                 and fourh_ok_short and (ema_5_now < ema_10_now)
             )
 
