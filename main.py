@@ -16,6 +16,7 @@ bot = telepot.Bot(telegram_bot_token)
 
 logging.basicConfig(level=logging.INFO)
 
+
 def send_telegram_message(message):
     for retry_count in range(1, 11):
         try:
@@ -26,6 +27,7 @@ def send_telegram_message(message):
             logging.error(f"텔레그램 메시지 전송 실패 (재시도 {retry_count}/10): {e}")
             time.sleep(5)
     logging.error("텔레그램 메시지 전송 실패: 최대 재시도 초과")
+
 
 def retry_request(func, *args, **kwargs):
     for attempt in range(10):
@@ -40,10 +42,12 @@ def retry_request(func, *args, **kwargs):
             time.sleep(5)
     return None
 
+
 def calculate_ema(close, period):
     if len(close) < period:
         return None
     return pd.Series(close).ewm(span=period, adjust=False).mean().iloc[-1]
+
 
 def get_ema_with_retry(close, period):
     for _ in range(5):
@@ -52,6 +56,7 @@ def get_ema_with_retry(close, period):
             return result
         time.sleep(0.5)
     return None
+
 
 def get_ohlcv_okx(instId, bar='1H', limit=200):
     url = f"https://www.okx.com/api/v5/market/candles?instId={instId}&bar={bar}&limit={limit}"
@@ -71,70 +76,70 @@ def get_ohlcv_okx(instId, bar='1H', limit=200):
         logging.error(f"{instId} OHLCV 파싱 실패: {e}")
         return None
 
+
 # === EMA 상태 계산 ===
 def get_ema_status_line(inst_id):
     try:
-        # --- 1D EMA (7-10) ---
+        # --- 1D EMA (5-10) ---
         df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=300)
         if df_1d is None:
             daily_status = "[1D] ❌"
         else:
-            ema_7_1d = get_ema_with_retry(df_1d['c'].values, 7)
+            ema_5_1d = get_ema_with_retry(df_1d['c'].values, 5)
             ema_10_1d = get_ema_with_retry(df_1d['c'].values, 10)
-            if None in [ema_7_1d, ema_10_1d]:
+            if None in [ema_5_1d, ema_10_1d]:
                 daily_status = "[1D] ❌"
             else:
-                status_7_10_1d = "🟩" if ema_7_1d > ema_10_1d else "🟥"
-                daily_status = f"[1D] 📊: {status_7_10_1d}"
+                status_5_10_1d = "🟩" if ema_5_1d > ema_10_1d else "🟥"
+                daily_status = f"[1D] 📊: {status_5_10_1d}"
 
-        # --- 4H EMA (7-10) ---
+        # --- 4H EMA (5-10) ---
         df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=300)
         if df_4h is None:
             fourh_status = "[4H] ❌"
             fourh_ok_long = False
             fourh_ok_short = False
         else:
-            ema_7_4h = get_ema_with_retry(df_4h['c'].values, 7)
+            ema_5_4h = get_ema_with_retry(df_4h['c'].values, 5)
             ema_10_4h = get_ema_with_retry(df_4h['c'].values, 10)
-            if None in [ema_7_4h, ema_10_4h]:
+            if None in [ema_5_4h, ema_10_4h]:
                 fourh_status = "[4H] ❌"
                 fourh_ok_long = False
                 fourh_ok_short = False
             else:
-                status_7_10_4h = "🟩" if ema_7_4h > ema_10_4h else "🟥"
-                fourh_status = f"[4H] 📊: {status_7_10_4h}"
-                fourh_ok_long = ema_7_4h > ema_10_4h
-                fourh_ok_short = ema_7_4h < ema_10_4h
+                status_5_10_4h = "🟩" if ema_5_4h > ema_10_4h else "🟥"
+                fourh_status = f"[4H] 📊: {status_5_10_4h}"
+                fourh_ok_long = ema_5_4h > ema_10_4h
+                fourh_ok_short = ema_5_4h < ema_10_4h
 
-        # --- 1H EMA (1-3, 7-10) ---
+        # --- 1H EMA (3-5, 5-10) ---
         df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=300)
-        if df_1h is None or len(df_1h) < 4:
+        if df_1h is None or len(df_1h) < 5:
             return f"{daily_status} | {fourh_status} | [1H] ❌", None
 
         closes = df_1h['c'].values
-        ema_1_now = get_ema_with_retry(closes, 1)
         ema_3_now = get_ema_with_retry(closes, 3)
-        ema_7_now = get_ema_with_retry(closes, 7)
+        ema_5_now = get_ema_with_retry(closes, 5)
         ema_10_now = get_ema_with_retry(closes, 10)
-        ema_1_prev = get_ema_with_retry(closes[:-1], 1)
         ema_3_prev = get_ema_with_retry(closes[:-1], 3)
+        ema_5_prev = get_ema_with_retry(closes[:-1], 5)
 
-        if None in [ema_1_now, ema_3_now, ema_7_now, ema_10_now, ema_1_prev, ema_3_prev]:
+        if None in [ema_3_now, ema_5_now, ema_10_now, ema_3_prev, ema_5_prev]:
             return f"{daily_status} | {fourh_status} | [1H] ❌", None
         else:
-            status_7_10_1h = "🟩" if ema_7_now > ema_10_now else "🟥"
-            status_1_3_1h = "🟩" if ema_1_now > ema_3_now else "🟥"
-            oneh_status = f"[1H] 📊: {status_7_10_1h} {status_1_3_1h}"
+            status_5_10_1h = "🟩" if ema_5_now > ema_10_now else "🟥"
+            status_3_5_1h = "🟩" if ema_3_now > ema_5_now else "🟥"
+            oneh_status = f"[1H] 📊: {status_5_10_1h} {status_3_5_1h}"
 
             # 🚀 롱 조건
             rocket_condition = (
-                ema_1_prev <= ema_3_prev and ema_1_now > ema_3_now 
-                and fourh_ok_long and (ema_7_now > ema_10_now)
+                ema_3_prev <= ema_5_prev and ema_3_now > ema_5_now
+                and fourh_ok_long and (ema_5_now > ema_10_now)
             )
             # ⚡ 숏 조건
             short_condition = (
-                ema_1_prev >= ema_3_prev and ema_1_now < ema_3_now
-                and fourh_ok_short and (ema_7_now < ema_10_now)
+                ema_3_prev >= ema_5_prev and ema_3_now < ema_5_now
+                and fourh_ok_short and (ema_5_now < ema_10_now)
             )
 
             if rocket_condition:
@@ -148,9 +153,11 @@ def get_ema_status_line(inst_id):
                 signal_type = None
 
         return f"{daily_status} | {fourh_status} | {oneh_status}{signal}", signal_type
+
     except Exception as e:
         logging.error(f"{inst_id} EMA 상태 계산 실패: {e}")
         return "[1D/4H/1H] ❌", None
+
 
 def calculate_daily_change(inst_id):
     df = get_ohlcv_okx(inst_id, bar="1H", limit=48)
@@ -176,12 +183,14 @@ def calculate_daily_change(inst_id):
         logging.error(f"{inst_id} 상승률 계산 오류: {e}")
         return None
 
+
 def format_volume_in_eok(volume):
     try:
         eok = int(volume // 1_000_000)
         return str(eok) if eok >= 1 else None
     except:
         return None
+
 
 def format_change_with_emoji(change):
     if change is None:
@@ -193,11 +202,13 @@ def format_change_with_emoji(change):
     else:
         return f"🔴 ({change:.2f}%)"
 
+
 def calculate_1h_volume(inst_id):
     df = get_ohlcv_okx(inst_id, bar="1H", limit=24)
     if df is None or len(df) < 1:
         return 0
     return df["volCcyQuote"].sum()
+
 
 def send_top10_volume_message(top_10_ids, volume_map):
     message_lines = [
@@ -213,9 +224,14 @@ def send_top10_volume_message(top_10_ids, volume_map):
         if signal_type not in ["long", "short"]:
             continue
 
+        daily_change = calculate_daily_change(inst_id)
+
+        # 📌 조건 추가: 당일 상승률이 양수일 때만 메시지 포함
+        if daily_change is None or daily_change <= 0:
+            continue
+
         signal_found = True  # ✅ 신호 발생 시 True
 
-        daily_change = calculate_daily_change(inst_id)
         volume_1h = volume_map.get(inst_id, 0)
         volume_str = format_volume_in_eok(volume_1h) or "🚫"
 
@@ -242,6 +258,7 @@ def send_top10_volume_message(top_10_ids, volume_map):
     else:
         logging.info("🚀/⚡ 조건 만족 코인 없음 → 메시지 전송 안 함")
 
+
 def get_all_okx_swap_symbols():
     url = "https://www.okx.com/api/v5/public/instruments?instType=SWAP"
     response = retry_request(requests.get, url)
@@ -249,6 +266,7 @@ def get_all_okx_swap_symbols():
         return []
     data = response.json().get("data", [])
     return [item["instId"] for item in data if "USDT" in item["instId"]]
+
 
 def main():
     logging.info("📥 거래대금 분석 시작")
@@ -260,18 +278,22 @@ def main():
         volume_map[inst_id] = vol_1h
         time.sleep(0.05)
 
-    top_10_ids = [inst_id for inst_id, _ in sorted(volume_map.items(), key=lambda x: x[1], reverse=True)[:10]]
+    top_10_ids = [inst_id for inst_id, _ in sorted(volume_map.items(), key=lambda x: x[1], reverse=True)[:200]]
     send_top10_volume_message(top_10_ids, volume_map)
+
 
 def run_scheduler():
     while True:
         schedule.run_pending()
         time.sleep(1)
 
+
 @app.on_event("startup")
 def start_scheduler():
     schedule.every(1).minutes.do(main)
     threading.Thread(target=run_scheduler, daemon=True).start()
 
+
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
