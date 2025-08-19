@@ -112,7 +112,7 @@ def get_ema_status_line(inst_id):
                 fourh_status = f"[4H] 📊: {status_5_20_4h}"
                 fourh_ok_long = ema_5_4h > ema_20_4h
 
-        # --- 1H EMA (3-5, 5-20) ---
+        # --- 1H EMA ---
         df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=300)
         if df_1h is None or len(df_1h) < 5:
             return f"{daily_status} | {fourh_status} | [1H] ❌", None
@@ -121,30 +121,28 @@ def get_ema_status_line(inst_id):
         ema_3_now = get_ema_with_retry(closes, 3)
         ema_5_now = get_ema_with_retry(closes, 5)
         ema_20_now = get_ema_with_retry(closes, 20)
-        ema_3_prev = get_ema_with_retry(closes[:-1], 3)
-        ema_5_prev = get_ema_with_retry(closes[:-1], 5)
 
-        if None in [ema_3_now, ema_5_now, ema_20_now, ema_3_prev, ema_5_prev]:
+        if None in [ema_3_now, ema_5_now, ema_20_now]:
             return f"{daily_status} | {fourh_status} | [1H] ❌", None
+
+        status_5_20_1h = "🟩" if ema_5_now > ema_20_now else "🟥"
+        status_3_5_1h = "🟩" if ema_3_now > ema_5_now else "🟥"
+        oneh_status = f"[1H] 📊: {status_5_20_1h} {status_3_5_1h}"
+
+        # 🚀 메시지 조건: 1D,4H,1H 5-20 정배열 + 1H 3-5 역배열
+        rocket_condition = (
+            daily_ok_long and
+            fourh_ok_long and
+            (ema_5_now > ema_20_now) and
+            (ema_3_now < ema_5_now)
+        )
+
+        if rocket_condition:
+            signal = " 🚀🚀🚀(롱)"
+            signal_type = "long"
         else:
-            status_5_20_1h = "🟩" if ema_5_now > ema_20_now else "🟥"
-            status_3_5_1h = "🟩" if ema_3_now > ema_5_now else "🟥"
-            oneh_status = f"[1H] 📊: {status_5_20_1h} {status_3_5_1h}"
-
-            # 🚀 롱 조건만 유지
-            rocket_condition = (
-                ema_3_prev >= ema_5_prev and ema_3_now < ema_5_now
-                and fourh_ok_long
-                and (ema_5_now > ema_20_now)
-                and daily_ok_long
-            )
-
-            if rocket_condition:
-                signal = " 🚀🚀🚀(롱)"
-                signal_type = "long"
-            else:
-                signal = ""
-                signal_type = None
+            signal = ""
+            signal_type = None
 
         return f"{daily_status} | {fourh_status} | {oneh_status}{signal}", signal_type
 
@@ -210,21 +208,19 @@ def send_top10_volume_message(top_10_ids, volume_map):
         "━━━━━━━━━━━━━━━━━━━",
     ]
 
-    signal_found = False  # ✅ 신호 발생 여부 체크
+    signal_found = False
 
     for i, inst_id in enumerate(top_10_ids, 1):
         name = inst_id.replace("-USDT-SWAP", "")
         ema_status_line, signal_type = get_ema_status_line(inst_id)
-        if signal_type != "long":  # 숏 제거
+        if signal_type != "long":
             continue
 
         daily_change = calculate_daily_change(inst_id)
-
-        # 📌 조건 추가: 당일 상승률이 양수일 때만 메시지 포함
         if daily_change is None or daily_change <= 0:
             continue
 
-        signal_found = True  # ✅ 신호 발생 시 True
+        signal_found = True
 
         volume_1h = volume_map.get(inst_id, 0)
         volume_str = format_volume_in_eok(volume_1h) or "🚫"
@@ -234,7 +230,6 @@ def send_top10_volume_message(top_10_ids, volume_map):
         message_lines.append("━━━━━━━━━━━━━━━━━━━")
 
     if signal_found:
-        # ✅ BTC 정보는 신호 있을 때만 같이 보냄
         btc_id = "BTC-USDT-SWAP"
         btc_change = calculate_daily_change(btc_id)
         btc_volume = volume_map.get(btc_id, 0)
