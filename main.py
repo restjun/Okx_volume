@@ -204,7 +204,7 @@ def calculate_1h_volume(inst_id):
 
 def send_top10_volume_message(top_10_ids, volume_map):
     message_lines = [
-        "🚀 신호 발생 코인 5-20",
+        "🚀 5-20 (롱만)",
         "━━━━━━━━━━━━━━━━━━━",
     ]
 
