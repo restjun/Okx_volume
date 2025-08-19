@@ -84,33 +84,33 @@ def get_ema_status_line(inst_id):
         df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=300)
         if df_1d is None:
             daily_status = "[1D] ❌"
+            daily_ok_long = False
         else:
             ema_5_1d = get_ema_with_retry(df_1d['c'].values, 5)
             ema_10_1d = get_ema_with_retry(df_1d['c'].values, 10)
             if None in [ema_5_1d, ema_10_1d]:
                 daily_status = "[1D] ❌"
+                daily_ok_long = False
             else:
                 status_5_10_1d = "🟩" if ema_5_1d > ema_10_1d else "🟥"
                 daily_status = f"[1D] 📊: {status_5_10_1d}"
+                daily_ok_long = ema_5_1d > ema_10_1d
 
         # --- 4H EMA (5-10) ---
         df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=300)
         if df_4h is None:
             fourh_status = "[4H] ❌"
             fourh_ok_long = False
-            fourh_ok_short = False
         else:
             ema_5_4h = get_ema_with_retry(df_4h['c'].values, 5)
             ema_10_4h = get_ema_with_retry(df_4h['c'].values, 10)
             if None in [ema_5_4h, ema_10_4h]:
                 fourh_status = "[4H] ❌"
                 fourh_ok_long = False
-                fourh_ok_short = False
             else:
                 status_5_10_4h = "🟩" if ema_5_4h > ema_10_4h else "🟥"
                 fourh_status = f"[4H] 📊: {status_5_10_4h}"
                 fourh_ok_long = ema_5_4h > ema_10_4h
-                fourh_ok_short = ema_5_4h < ema_10_4h
 
         # --- 1H EMA (3-5, 5-10) ---
         df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=300)
@@ -131,23 +131,17 @@ def get_ema_status_line(inst_id):
             status_3_5_1h = "🟩" if ema_3_now > ema_5_now else "🟥"
             oneh_status = f"[1H] 📊: {status_5_10_1h} {status_3_5_1h}"
 
-            # 🚀 롱 조건
+            # 🚀 롱 조건만 유지
             rocket_condition = (
                 ema_3_prev >= ema_5_prev and ema_3_now < ema_5_now
-                and fourh_ok_long and (ema_5_now > ema_10_now)
-            )
-            # ⚡ 숏 조건
-            short_condition = (
-                ema_3_prev <= ema_5_prev and ema_3_now > ema_5_now
-                and fourh_ok_short and (ema_5_now < ema_10_now)
+                and fourh_ok_long
+                and (ema_5_now > ema_10_now)
+                and daily_ok_long
             )
 
             if rocket_condition:
                 signal = " 🚀🚀🚀(롱)"
                 signal_type = "long"
-            elif short_condition:
-                signal = " ⚡⚡⚡(숏)"
-                signal_type = "short"
             else:
                 signal = ""
                 signal_type = None
@@ -212,7 +206,7 @@ def calculate_1h_volume(inst_id):
 
 def send_top10_volume_message(top_10_ids, volume_map):
     message_lines = [
-        "🚀/⚡",
+        "🚀 신호 발생 코인",
         "━━━━━━━━━━━━━━━━━━━",
     ]
 
@@ -221,7 +215,7 @@ def send_top10_volume_message(top_10_ids, volume_map):
     for i, inst_id in enumerate(top_10_ids, 1):
         name = inst_id.replace("-USDT-SWAP", "")
         ema_status_line, signal_type = get_ema_status_line(inst_id)
-        if signal_type not in ["long", "short"]:
+        if signal_type != "long":  # 숏 제거
             continue
 
         daily_change = calculate_daily_change(inst_id)
@@ -256,7 +250,7 @@ def send_top10_volume_message(top_10_ids, volume_map):
         full_message = "\n".join(btc_lines + message_lines)
         send_telegram_message(full_message)
     else:
-        logging.info("🚀/⚡ 조건 만족 코인 없음 → 메시지 전송 안 함")
+        logging.info("🚀 조건 만족 코인 없음 → 메시지 전송 안 함")
 
 
 def get_all_okx_swap_symbols():
@@ -278,7 +272,7 @@ def main():
         volume_map[inst_id] = vol_1h
         time.sleep(0.05)
 
-    top_10_ids = [inst_id for inst_id, _ in sorted(volume_map.items(), key=lambda x: x[1], reverse=True)[:200]]
+    top_10_ids = [inst_id for inst_id, _ in sorted(volume_map.items(), key=lambda x: x[1], reverse=True)[:100]]
     send_top10_volume_message(top_10_ids, volume_map)
 
 
@@ -296,4 +290,3 @@ def start_scheduler():
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
-
