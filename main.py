@@ -80,39 +80,39 @@ def get_ohlcv_okx(instId, bar='1H', limit=200):
 # === EMA 상태 계산 ===
 def get_ema_status_line(inst_id):
     try:
-        # --- 1D EMA (5-10) ---
+        # --- 1D EMA (5-20) ---
         df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=300)
         if df_1d is None:
             daily_status = "[1D] ❌"
             daily_ok_long = False
         else:
             ema_5_1d = get_ema_with_retry(df_1d['c'].values, 5)
-            ema_10_1d = get_ema_with_retry(df_1d['c'].values, 10)
-            if None in [ema_5_1d, ema_10_1d]:
+            ema_20_1d = get_ema_with_retry(df_1d['c'].values, 20)
+            if None in [ema_5_1d, ema_20_1d]:
                 daily_status = "[1D] ❌"
                 daily_ok_long = False
             else:
-                status_5_10_1d = "🟩" if ema_5_1d > ema_10_1d else "🟥"
-                daily_status = f"[1D] 📊: {status_5_10_1d}"
-                daily_ok_long = ema_5_1d > ema_10_1d
+                status_5_20_1d = "🟩" if ema_5_1d > ema_20_1d else "🟥"
+                daily_status = f"[1D] 📊: {status_5_20_1d}"
+                daily_ok_long = ema_5_1d > ema_20_1d
 
-        # --- 4H EMA (5-10) ---
+        # --- 4H EMA (5-20) ---
         df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=300)
         if df_4h is None:
             fourh_status = "[4H] ❌"
             fourh_ok_long = False
         else:
             ema_5_4h = get_ema_with_retry(df_4h['c'].values, 5)
-            ema_10_4h = get_ema_with_retry(df_4h['c'].values, 10)
-            if None in [ema_5_4h, ema_10_4h]:
+            ema_20_4h = get_ema_with_retry(df_4h['c'].values, 20)
+            if None in [ema_5_4h, ema_20_4h]:
                 fourh_status = "[4H] ❌"
                 fourh_ok_long = False
             else:
-                status_5_10_4h = "🟩" if ema_5_4h > ema_10_4h else "🟥"
-                fourh_status = f"[4H] 📊: {status_5_10_4h}"
-                fourh_ok_long = ema_5_4h > ema_10_4h
+                status_5_20_4h = "🟩" if ema_5_4h > ema_20_4h else "🟥"
+                fourh_status = f"[4H] 📊: {status_5_20_4h}"
+                fourh_ok_long = ema_5_4h > ema_20_4h
 
-        # --- 1H EMA (3-5, 5-10) ---
+        # --- 1H EMA (3-5, 5-20) ---
         df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=300)
         if df_1h is None or len(df_1h) < 5:
             return f"{daily_status} | {fourh_status} | [1H] ❌", None
@@ -120,22 +120,22 @@ def get_ema_status_line(inst_id):
         closes = df_1h['c'].values
         ema_3_now = get_ema_with_retry(closes, 3)
         ema_5_now = get_ema_with_retry(closes, 5)
-        ema_10_now = get_ema_with_retry(closes, 10)
+        ema_20_now = get_ema_with_retry(closes, 20)
         ema_3_prev = get_ema_with_retry(closes[:-1], 3)
         ema_5_prev = get_ema_with_retry(closes[:-1], 5)
 
-        if None in [ema_3_now, ema_5_now, ema_10_now, ema_3_prev, ema_5_prev]:
+        if None in [ema_3_now, ema_5_now, ema_20_now, ema_3_prev, ema_5_prev]:
             return f"{daily_status} | {fourh_status} | [1H] ❌", None
         else:
-            status_5_10_1h = "🟩" if ema_5_now > ema_10_now else "🟥"
+            status_5_20_1h = "🟩" if ema_5_now > ema_20_now else "🟥"
             status_3_5_1h = "🟩" if ema_3_now > ema_5_now else "🟥"
-            oneh_status = f"[1H] 📊: {status_5_10_1h} {status_3_5_1h}"
+            oneh_status = f"[1H] 📊: {status_5_20_1h} {status_3_5_1h}"
 
             # 🚀 롱 조건만 유지
             rocket_condition = (
                 ema_3_prev >= ema_5_prev and ema_3_now < ema_5_now
                 and fourh_ok_long
-                and (ema_5_now > ema_10_now)
+                and (ema_5_now > ema_20_now)
                 and daily_ok_long
             )
 
@@ -206,7 +206,7 @@ def calculate_1h_volume(inst_id):
 
 def send_top10_volume_message(top_10_ids, volume_map):
     message_lines = [
-        "🚀 신호 발생 코인",
+        "🚀 신호 발생 코인 5-20",
         "━━━━━━━━━━━━━━━━━━━",
     ]
 
