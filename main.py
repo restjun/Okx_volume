@@ -58,7 +58,7 @@ def get_ema_with_retry(close, period):
     return None
 
 
-# === EMA 기반 RSI 계산 (수정) ===
+# === EMA 기반 RSI 계산 ===
 def calculate_rsi(closes, period=5):
     if len(closes) < period + 1:
         return None
@@ -94,7 +94,7 @@ def get_ohlcv_okx(instId, bar='1H', limit=200):
         return None
 
 
-# === EMA + RSI 상태 계산 ===
+# === EMA + RSI 상태 계산 (RSI >= 50만 체크) ===
 def get_ema_status_line(inst_id):
     try:
         # --- 1D EMA (3-5) ---
@@ -129,10 +129,9 @@ def get_ema_status_line(inst_id):
             fourh_status = f"[4H] 📊: {'🟥' if fourh_down else '🟩'}"
 
             rsi_series = calculate_rsi(closes_4h, period=5)
-            if rsi_series is not None and len(rsi_series) >= 2:
+            if rsi_series is not None and len(rsi_series) >= 1:
                 rsi_val = round(rsi_series.iloc[-1], 2)
-                rsi_prev = rsi_series.iloc[-2]
-                rsi_break = (rsi_prev < 50 and rsi_val >= 50)
+                rsi_break = rsi_val >= 50  # RSI가 50 이상이면 True
             else:
                 rsi_val = None
                 rsi_break = False
@@ -152,7 +151,7 @@ def get_ema_status_line(inst_id):
         return "[1D/4H] ❌", None
 
 
-# --- 나머지 원본 코드 유지 ---
+# --- 나머지 원본 코드 그대로 ---
 def calculate_daily_change(inst_id):
     df = get_ohlcv_okx(inst_id, bar="1H", limit=48)
     if df is None or len(df) < 24:
