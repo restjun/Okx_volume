@@ -77,7 +77,7 @@ def get_ohlcv_okx(instId, bar='1H', limit=200):
         return None
 
 
-# === EMA 상태 계산 ===
+# === EMA 상태 계산 (1D 3-5 + 4H 3-5 골든크로스) ===
 def get_ema_status_line(inst_id):
     try:
         # --- 1D EMA (3-5) ---
@@ -85,7 +85,6 @@ def get_ema_status_line(inst_id):
         if df_1d is None:
             daily_status = "[1D] ❌"
             daily_ok_long = False
-            ema_3_1d = ema_5_1d = None
         else:
             closes_1d = df_1d['c'].values
             ema_3_1d = get_ema_with_retry(closes_1d, 3)
@@ -94,32 +93,26 @@ def get_ema_status_line(inst_id):
                 daily_status = "[1D] ❌"
                 daily_ok_long = False
             else:
-                status_3_5_1d = "🟩" if ema_3_1d > ema_5_1d else "🟥"
-                daily_status = f"[1D] 📊: {status_3_5_1d}"
+                daily_status = f"[1D] 📊: {'🟩' if ema_3_1d > ema_5_1d else '🟥'}"
                 daily_ok_long = ema_3_1d > ema_5_1d
 
         # --- 4H EMA (3-5) ---
-        df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=300)
-        if df_4h is None:
+        df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=50)
+        if df_4h is None or len(df_4h) < 2:
             fourh_status = "[4H] ❌"
-            ema_3_4h = ema_5_4h = None
+            prev_cross = False
         else:
             closes_4h = df_4h['c'].values
-            ema_3_4h = get_ema_with_retry(closes_4h, 3)
-            ema_5_4h = get_ema_with_retry(closes_4h, 5)
-            if None in [ema_3_4h, ema_5_4h]:
-                fourh_status = "[4H] ❌"
-            else:
-                status_3_5_4h = "🟩" if ema_3_4h > ema_5_4h else "🟥"
-                fourh_status = f"[4H] 📊: {status_3_5_4h}"
+            ema_3_series = pd.Series(closes_4h).ewm(span=3, adjust=False).mean()
+            ema_5_series = pd.Series(closes_4h).ewm(span=5, adjust=False).mean()
 
-        # 🚀 롱 조건: 1D 3-5 정배열 + 4H 3-5 역배열
-        rocket_condition = (
-            daily_ok_long and
-            (ema_3_4h is not None and ema_5_4h is not None and ema_3_4h < ema_5_4h)
-        )
+            # 골든크로스 발생 여부 (직전 캔들과 비교)
+            prev_cross = ema_3_series.iloc[-2] <= ema_5_series.iloc[-2] and ema_3_series.iloc[-1] > ema_5_series.iloc[-1]
 
-        if rocket_condition:
+            fourh_status = f"[4H] 📊: {'🟩' if ema_3_series.iloc[-1] > ema_5_series.iloc[-1] else '🟥'}"
+
+        # 🚀 롱 조건: 1D 3-5 정배열 + 4H 3-5 골든크로스 발생
+        if daily_ok_long and prev_cross:
             signal = " 🚀🚀🚀(롱)"
             signal_type = "long"
         else:
@@ -251,6 +244,7 @@ def main():
 
     top_10_ids = [inst_id for inst_id, _ in sorted(volume_map.items(), key=lambda x: x[1], reverse=True)[:10]]
     send_top10_volume_message(top_10_ids, volume_map)
+
 
 def run_scheduler():
     while True:
