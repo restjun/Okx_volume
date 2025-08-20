@@ -96,45 +96,31 @@ def get_ema_status_line(inst_id):
                 daily_status = f"[1D] 📊: {status_5_20_1d}"
                 daily_ok_long = ema_5_1d > ema_20_1d
 
-        # --- 4H EMA (5-20) ---
+        # --- 4H EMA (5-20 + 3-5) ---
         df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=300)
         if df_4h is None:
             fourh_status = "[4H] ❌"
             fourh_ok_long = False
+            ema_3_4h = ema_5_4h = None
         else:
-            ema_5_4h = get_ema_with_retry(df_4h['c'].values, 5)
-            ema_20_4h = get_ema_with_retry(df_4h['c'].values, 20)
-            if None in [ema_5_4h, ema_20_4h]:
+            closes_4h = df_4h['c'].values
+            ema_3_4h = get_ema_with_retry(closes_4h, 3)
+            ema_5_4h = get_ema_with_retry(closes_4h, 5)
+            ema_20_4h = get_ema_with_retry(closes_4h, 20)
+            if None in [ema_3_4h, ema_5_4h, ema_20_4h]:
                 fourh_status = "[4H] ❌"
                 fourh_ok_long = False
             else:
                 status_5_20_4h = "🟩" if ema_5_4h > ema_20_4h else "🟥"
-                fourh_status = f"[4H] 📊: {status_5_20_4h}"
+                status_3_5_4h = "🟩" if ema_3_4h > ema_5_4h else "🟥"
+                fourh_status = f"[4H] 📊: {status_5_20_4h} {status_3_5_4h}"
                 fourh_ok_long = ema_5_4h > ema_20_4h
 
-        # --- 1H EMA ---
-        df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=300)
-        if df_1h is None or len(df_1h) < 5:
-            return f"{daily_status} | {fourh_status} | [1H] ❌", None
-
-        closes = df_1h['c'].values
-        ema_3_now = get_ema_with_retry(closes, 3)
-        ema_5_now = get_ema_with_retry(closes, 5)
-        ema_20_now = get_ema_with_retry(closes, 20)
-
-        if None in [ema_3_now, ema_5_now, ema_20_now]:
-            return f"{daily_status} | {fourh_status} | [1H] ❌", None
-
-        status_5_20_1h = "🟩" if ema_5_now > ema_20_now else "🟥"
-        status_3_5_1h = "🟩" if ema_3_now > ema_5_now else "🟥"
-        oneh_status = f"[1H] 📊: {status_5_20_1h} {status_3_5_1h}"
-
-        # 🚀 메시지 조건: 1D,4H,1H 5-20 정배열 + 1H 3-5 역배열
+        # 🚀 롱 조건: 1D 5-20 정배열 + 4H 5-20 정배열 + 4H 3-5 역배열
         rocket_condition = (
             daily_ok_long and
             fourh_ok_long and
-            (ema_5_now > ema_20_now) and
-            (ema_3_now < ema_5_now)
+            (ema_3_4h is not None and ema_5_4h is not None and ema_3_4h < ema_5_4h)
         )
 
         if rocket_condition:
@@ -144,11 +130,11 @@ def get_ema_status_line(inst_id):
             signal = ""
             signal_type = None
 
-        return f"{daily_status} | {fourh_status} | {oneh_status}{signal}", signal_type
+        return f"{daily_status} | {fourh_status}{signal}", signal_type
 
     except Exception as e:
         logging.error(f"{inst_id} EMA 상태 계산 실패: {e}")
-        return "[1D/4H/1H] ❌", None
+        return "[1D/4H] ❌", None
 
 
 def calculate_daily_change(inst_id):
