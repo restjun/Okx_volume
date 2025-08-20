@@ -58,6 +58,7 @@ def get_ema_with_retry(close, period):
     return None
 
 
+# === EMA 기반 RSI 계산 (수정) ===
 def calculate_rsi(closes, period=5):
     if len(closes) < period + 1:
         return None
@@ -65,8 +66,10 @@ def calculate_rsi(closes, period=5):
     delta = series.diff()
     gain = delta.where(delta > 0, 0)
     loss = -delta.where(delta < 0, 0)
-    avg_gain = gain.rolling(window=period).mean()
-    avg_loss = loss.rolling(window=period).mean()
+
+    # EWMA 기반 평균 상승/하락
+    avg_gain = gain.ewm(span=period, adjust=False).mean()
+    avg_loss = loss.ewm(span=period, adjust=False).mean()
     rs = avg_gain / avg_loss
     rsi = 100 - (100 / (1 + rs))
     return rsi
@@ -91,7 +94,7 @@ def get_ohlcv_okx(instId, bar='1H', limit=200):
         return None
 
 
-# === EMA + RSI 조건 계산 ===
+# === EMA + RSI 상태 계산 ===
 def get_ema_status_line(inst_id):
     try:
         # --- 1D EMA (3-5) ---
@@ -122,11 +125,9 @@ def get_ema_status_line(inst_id):
             ema_3_series = pd.Series(closes_4h).ewm(span=3, adjust=False).mean()
             ema_5_series = pd.Series(closes_4h).ewm(span=5, adjust=False).mean()
 
-            # 4H 역배열 조건
             fourh_down = ema_3_series.iloc[-1] < ema_5_series.iloc[-1]
             fourh_status = f"[4H] 📊: {'🟥' if fourh_down else '🟩'}"
 
-            # RSI(5) 50 돌파 체크
             rsi_series = calculate_rsi(closes_4h, period=5)
             if rsi_series is not None and len(rsi_series) >= 2:
                 rsi_val = round(rsi_series.iloc[-1], 2)
@@ -136,7 +137,6 @@ def get_ema_status_line(inst_id):
                 rsi_val = None
                 rsi_break = False
 
-        # 🚀 롱 조건: (1D 정배열) + (4H 역배열) + (RSI 50 돌파)
         if daily_ok_long and fourh_down and rsi_break:
             signal = " 🚀🚀🚀(롱)"
             signal_type = "long"
@@ -152,7 +152,7 @@ def get_ema_status_line(inst_id):
         return "[1D/4H] ❌", None
 
 
-# --- 나머지는 원본 그대로 ---
+# --- 나머지 원본 코드 유지 ---
 def calculate_daily_change(inst_id):
     df = get_ohlcv_okx(inst_id, bar="1H", limit=48)
     if df is None or len(df) < 24:
