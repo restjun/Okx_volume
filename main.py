@@ -192,7 +192,7 @@ def send_top10_volume_message(top_10_ids, volume_map):
             continue
 
         daily_change = calculate_daily_change(inst_id)
-        if daily_change is None or daily_change <= 0:
+        if daily_change is None or daily_change <= -100:
             continue
 
         signal_found = True
