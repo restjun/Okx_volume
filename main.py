@@ -58,6 +58,20 @@ def get_ema_with_retry(close, period):
     return None
 
 
+def calculate_rsi(closes, period=5):
+    if len(closes) < period + 1:
+        return None
+    series = pd.Series(closes)
+    delta = series.diff()
+    gain = delta.where(delta > 0, 0)
+    loss = -delta.where(delta < 0, 0)
+    avg_gain = gain.rolling(window=period).mean()
+    avg_loss = loss.rolling(window=period).mean()
+    rs = avg_gain / avg_loss
+    rsi = 100 - (100 / (1 + rs))
+    return rsi
+
+
 def get_ohlcv_okx(instId, bar='1H', limit=200):
     url = f"https://www.okx.com/api/v5/market/candles?instId={instId}&bar={bar}&limit={limit}"
     response = retry_request(requests.get, url)
@@ -77,7 +91,7 @@ def get_ohlcv_okx(instId, bar='1H', limit=200):
         return None
 
 
-# === EMA 상태 계산 (1D 3-5 + 4H 3-5 골든크로스) ===
+# === EMA + RSI 조건 계산 ===
 def get_ema_status_line(inst_id):
     try:
         # --- 1D EMA (3-5) ---
@@ -96,36 +110,49 @@ def get_ema_status_line(inst_id):
                 daily_status = f"[1D] 📊: {'🟩' if ema_3_1d > ema_5_1d else '🟥'}"
                 daily_ok_long = ema_3_1d > ema_5_1d
 
-        # --- 4H EMA (3-5) ---
+        # --- 4H EMA (3-5) + RSI ---
         df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=50)
-        if df_4h is None or len(df_4h) < 2:
+        if df_4h is None or len(df_4h) < 6:
             fourh_status = "[4H] ❌"
-            prev_cross = False
+            fourh_down = False
+            rsi_break = False
+            rsi_val = None
         else:
             closes_4h = df_4h['c'].values
             ema_3_series = pd.Series(closes_4h).ewm(span=3, adjust=False).mean()
             ema_5_series = pd.Series(closes_4h).ewm(span=5, adjust=False).mean()
 
-            # 골든크로스 발생 여부 (직전 캔들과 비교)
-            prev_cross = ema_3_series.iloc[-2] <= ema_5_series.iloc[-2] and ema_3_series.iloc[-1] > ema_5_series.iloc[-1]
+            # 4H 역배열 조건
+            fourh_down = ema_3_series.iloc[-1] < ema_5_series.iloc[-1]
+            fourh_status = f"[4H] 📊: {'🟥' if fourh_down else '🟩'}"
 
-            fourh_status = f"[4H] 📊: {'🟩' if ema_3_series.iloc[-1] > ema_5_series.iloc[-1] else '🟥'}"
+            # RSI(5) 50 돌파 체크
+            rsi_series = calculate_rsi(closes_4h, period=5)
+            if rsi_series is not None and len(rsi_series) >= 2:
+                rsi_val = round(rsi_series.iloc[-1], 2)
+                rsi_prev = rsi_series.iloc[-2]
+                rsi_break = (rsi_prev < 50 and rsi_val >= 50)
+            else:
+                rsi_val = None
+                rsi_break = False
 
-        # 🚀 롱 조건: 1D 3-5 정배열 + 4H 3-5 골든크로스 발생
-        if daily_ok_long and prev_cross:
+        # 🚀 롱 조건: (1D 정배열) + (4H 역배열) + (RSI 50 돌파)
+        if daily_ok_long and fourh_down and rsi_break:
             signal = " 🚀🚀🚀(롱)"
             signal_type = "long"
         else:
             signal = ""
             signal_type = None
 
-        return f"{daily_status} | {fourh_status}{signal}", signal_type
+        rsi_str = f" | RSI(5): {rsi_val}" if rsi_val is not None else ""
+        return f"{daily_status} | {fourh_status}{signal}{rsi_str}", signal_type
 
     except Exception as e:
         logging.error(f"{inst_id} EMA 상태 계산 실패: {e}")
         return "[1D/4H] ❌", None
 
 
+# --- 나머지는 원본 그대로 ---
 def calculate_daily_change(inst_id):
     df = get_ohlcv_okx(inst_id, bar="1H", limit=48)
     if df is None or len(df) < 24:
