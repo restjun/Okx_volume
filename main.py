@@ -58,18 +58,25 @@ def get_ema_with_retry(close, period):
     return None
 
 
-# === EMA 기반 RSI 계산 ===
+# === Wilder RSI 방식으로 수정 ===
 def calculate_rsi(closes, period=5):
     if len(closes) < period + 1:
         return None
     series = pd.Series(closes)
-    delta = series.diff()
+    delta = series.diff().dropna()
+
     gain = delta.where(delta > 0, 0)
     loss = -delta.where(delta < 0, 0)
 
-    # EWMA 기반 평균 상승/하락
-    avg_gain = gain.ewm(span=period, adjust=False).mean()
-    avg_loss = loss.ewm(span=period, adjust=False).mean()
+    # 첫번째 평균은 SMA
+    avg_gain = gain.rolling(window=period, min_periods=period).mean()
+    avg_loss = loss.rolling(window=period, min_periods=period).mean()
+
+    # Wilder smoothing
+    for i in range(period, len(delta)):
+        avg_gain.iloc[i] = (avg_gain.iloc[i-1]*(period-1) + gain.iloc[i]) / period
+        avg_loss.iloc[i] = (avg_loss.iloc[i-1]*(period-1) + loss.iloc[i]) / period
+
     rs = avg_gain / avg_loss
     rsi = 100 - (100 / (1 + rs))
     return rsi
@@ -94,7 +101,7 @@ def get_ohlcv_okx(instId, bar='1H', limit=200):
         return None
 
 
-# === EMA + RSI 상태 계산 (RSI >= 50만 체크) ===
+# === EMA + RSI 상태 계산 (RSI ≥ 50 체크) ===
 def get_ema_status_line(inst_id):
     try:
         # --- 1D EMA (3-5) ---
