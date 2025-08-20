@@ -171,7 +171,7 @@ def format_change_with_emoji(change):
 
 
 def calculate_1h_volume(inst_id):
-    df = get_ohlcv_okx(inst_id, bar="1H", limit=1)
+    df = get_ohlcv_okx(inst_id, bar="1H", limit=4)
     if df is None or len(df) < 1:
         return 0
     return df["volCcyQuote"].sum()
