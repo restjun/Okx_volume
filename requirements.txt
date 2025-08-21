@@ -40,4 +40,12 @@ ccxtpro
 httpx
 pandas
 ccxt
+fastapi
+uvicorn
+pandas
+telepot
+schedule
+requests
+tvdatafeed
+
 
