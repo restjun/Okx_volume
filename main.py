@@ -4,16 +4,17 @@ import schedule
 import time
 import requests
 import threading
+import uvicorn
 import logging
 import pandas as pd
 
+# =======================
+# FastAPI & Telegram 설정
+# =======================
 app = FastAPI()
-
-# ====== Telegram Bot 설정 ======
 telegram_bot_token = "8451481398:AAHHg2wVDKphMruKsjN2b6NFKJ50jhxEe-g"
 telegram_user_id = 6596886700
 bot = telepot.Bot(telegram_bot_token)
-
 logging.basicConfig(level=logging.INFO)
 
 def send_telegram_message(message):
@@ -27,7 +28,9 @@ def send_telegram_message(message):
             time.sleep(5)
     logging.error("텔레그램 메시지 전송 실패: 최대 재시도 횟수 초과")
 
-# ====== 요청 재시도 함수 ======
+# =======================
+# 공통 함수
+# =======================
 def retry_request(func, *args, **kwargs):
     for attempt in range(10):
         try:
@@ -41,7 +44,6 @@ def retry_request(func, *args, **kwargs):
             time.sleep(5)
     return None
 
-# ====== OHLCV & EMA 계산 ======
 def calculate_ema(close, period):
     if len(close) < period:
         return None
@@ -54,6 +56,17 @@ def get_ema_with_retry(close, period):
             return result
         time.sleep(0.5)
     return None
+
+# =======================
+# OKX 데이터 수집
+# =======================
+def get_all_okx_swap_symbols():
+    url = "https://www.okx.com/api/v5/public/instruments?instType=SWAP"
+    response = retry_request(requests.get, url)
+    if response is None:
+        return []
+    data = response.json().get("data", [])
+    return [item["instId"] for item in data if "USDT" in item["instId"]]
 
 def get_ohlcv_okx(instId, bar='1H', limit=200):
     url = f"https://www.okx.com/api/v5/market/candles?instId={instId}&bar={bar}&limit={limit}"
@@ -73,56 +86,48 @@ def get_ohlcv_okx(instId, bar='1H', limit=200):
         logging.error(f"{instId} OHLCV 파싱 실패: {e}")
         return None
 
-def get_ema_icon(close):
-    ema_3 = get_ema_with_retry(close, 3)
-    ema_5 = get_ema_with_retry(close, 5)
-    if ema_3 is None or ema_5 is None:
-        return "[❌]"
-    return "[🟩]" if ema_3 > ema_5 else "[🟥]"
-
-def get_all_timeframe_ema_status(inst_id):
+# =======================
+# EMA/RSI 분석
+# =======================
+def get_ema_bullish_status(inst_id):
     try:
-        df_1h = get_ohlcv_okx(inst_id, bar="1H", limit=100)
-        df_4h = get_ohlcv_okx(inst_id, bar="4H", limit=100)
-        df_1d = get_ohlcv_okx(inst_id, bar="1D", limit=100)
+        df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=300)
+        df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=300)
+        df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=300)
         if df_1h is None or df_4h is None or df_1d is None:
             return None
-        return {
-            "1H": get_ema_icon(df_1h['c'].values),
-            "4H": get_ema_icon(df_4h['c'].values),
-            "1D": get_ema_icon(df_1d['c'].values)
-        }
+
+        close_1h, close_4h, close_1d = df_1h['c'].values, df_4h['c'].values, df_1d['c'].values
+
+        def is_bullish(close):
+            ema3, ema5 = get_ema_with_retry(close, 3), get_ema_with_retry(close, 5)
+            if ema3 is None or ema5 is None:
+                return False
+            return ema3 > ema5
+
+        return is_bullish(close_1h) and is_bullish(close_4h) and is_bullish(close_1d)
     except Exception as e:
-        logging.error(f"{inst_id} EMA 상태 가져오기 실패: {e}")
+        logging.error(f"{inst_id} EMA 상태 계산 실패: {e}")
         return None
 
-def calculate_daily_change(inst_id):
-    df = get_ohlcv_okx(inst_id, bar="1H", limit=48)
-    if df is None or len(df) < 24:
-        return None
-    try:
-        df['datetime'] = pd.to_datetime(df['ts'], unit='ms')
-        df['datetime_kst'] = df['datetime'] + pd.Timedelta(hours=9)
-        df.set_index('datetime_kst', inplace=True)
-        daily = df.resample('1D', offset='9h').agg({
-            'o': 'first', 'h': 'max', 'l': 'min', 'c': 'last', 'vol': 'sum'
-        }).dropna().sort_index(ascending=False).reset_index()
-        if len(daily) < 2:
-            return None
-        today_close = daily.loc[0, 'c']
-        yesterday_close = daily.loc[1, 'c']
-        return round(((today_close - yesterday_close) / yesterday_close) * 100, 2)
-    except Exception as e:
-        logging.error(f"{inst_id} 상승률 계산 오류: {e}")
-        return None
+def calculate_rsi(close, period=5):
+    close = pd.Series(close)
+    delta = close.diff().dropna()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+    avg_gain = gain.rolling(window=period, min_periods=period).mean().iloc[period-1]
+    avg_loss = loss.rolling(window=period, min_periods=period).mean().iloc[period-1]
+    for i in range(period, len(gain)):
+        avg_gain = (avg_gain * (period - 1) + gain.iloc[i]) / period
+        avg_loss = (avg_loss * (period - 1) + loss.iloc[i]) / period
+    if avg_loss == 0:
+        return 100
+    rs = avg_gain / avg_loss
+    return 100 - (100 / (1 + rs))
 
-def format_volume_in_eok(volume):
-    try:
-        eok = int(volume // 1_000_000)
-        return str(eok) if eok >= 0 else None
-    except:
-        return None
-
+# =======================
+# 알림 메시지 생성
+# =======================
 def format_change_with_emoji(change):
     if change is None:
         return "(N/A)"
@@ -133,43 +138,38 @@ def format_change_with_emoji(change):
     else:
         return f"🔴 ({change:.2f}%)"
 
-# ====== OKX 심볼 가져오기 ======
-def get_all_okx_swap_symbols():
-    url = "https://www.okx.com/api/v5/public/instruments?instType=SWAP"
-    response = retry_request(requests.get, url)
-    if response is None:
-        return []
-    data = response.json().get("data", [])
-    return [item["instId"] for item in data if "USDT" in item["instId"]]
-
-# ====== 알림 스케줄러 ======
-def check_and_notify():
+def check_market_and_alert():
     symbols = get_all_okx_swap_symbols()
-    for inst_id in symbols:
-        ema_status = get_all_timeframe_ema_status(inst_id)
-        if ema_status is None:
+    for symbol in symbols:
+        bullish = get_ema_bullish_status(symbol)
+        df_1h = get_ohlcv_okx(symbol, bar='1H', limit=50)
+        if df_1h is None:
             continue
+        rsi = calculate_rsi(df_1h['c'].values)
+        if bullish and rsi < 30:
+            msg = f"{symbol} 📈 EMA Bullish + RSI Oversold ({rsi:.2f})"
+            send_telegram_message(msg)
 
-        df = get_ohlcv_okx(inst_id, bar="1H", limit=1)
-        if df is None or len(df) == 0:
-            continue
-        volume_eok = format_volume_in_eok(df['vol'].iloc[-1])
-        change = calculate_daily_change(inst_id)
-        change_str = format_change_with_emoji(change)
-
-        if volume_eok is not None and int(volume_eok) >= 300:  # 300억 이상 필터
-            message = f"{inst_id}\nEMA: {ema_status['1H']} | {ema_status['4H']} | {ema_status['1D']}\n거래대금: {volume_eok}억\n변동률: {change_str}"
-            send_telegram_message(message)
-
+# =======================
+# 스케줄러
+# =======================
 def run_scheduler():
-    schedule.every(1).minutes.do(check_and_notify)
+    schedule.every(1).minutes.do(check_market_and_alert)
     while True:
         schedule.run_pending()
         time.sleep(1)
 
-# ====== 백그라운드 스레드로 스케줄러 실행 ======
+# =======================
+# FastAPI 엔드포인트
+# =======================
+@app.get("/")
+def root():
+    return {"message": "OKX EMA/RSI Telegram Bot Running"}
+
+# =======================
+# 스레드로 스케줄러 실행
+# =======================
 threading.Thread(target=run_scheduler, daemon=True).start()
 
-@app.get("/")
-def read_root():
-    return {"status": "OK, Telegram bot running"}
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8000)
