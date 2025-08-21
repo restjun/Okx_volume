@@ -83,7 +83,6 @@ def get_ohlcv_okx(instId, bar='1H', limit=200):
 # === EMA 상태 계산 (롱: 1D 정배열 + 4H 골든크로스, 숏: 1D 역배열 + 4H 데드크로스) ===
 def get_ema_status_line(inst_id):
     try:
-        # --- 1D EMA (2-3) ---
         df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=300)
         if df_1d is None:
             daily_status = "[1D] ❌"
@@ -106,7 +105,6 @@ def get_ema_status_line(inst_id):
                     daily_ok_long = False
                     daily_ok_short = True
 
-        # --- 4H EMA (2-3) ---
         df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=50)
         if df_4h is None or len(df_4h) < 2:
             fourh_status = "[4H] ❌"
@@ -122,7 +120,6 @@ def get_ema_status_line(inst_id):
 
             fourh_status = f"[4H] 📊: {'🟩' if ema_2_series.iloc[-1] > ema_3_series.iloc[-1] else '🟥'}"
 
-        # ⚡ 조건 판별
         if daily_ok_long and golden_cross:
             signal = " 🚀🚀🚀(롱)"
             signal_type = "long"
@@ -203,7 +200,6 @@ def send_top_volume_message(top_ids, volume_map):
     for i, inst_id in enumerate(top_ids, 1):
         name = inst_id.replace("-USDT-SWAP", "")
         ema_status_line, signal_type = get_ema_status_line(inst_id)
-
         if signal_type is None:
             continue
 
@@ -215,12 +211,12 @@ def send_top_volume_message(top_ids, volume_map):
         volume_str = format_volume_in_eok(volume_1h) or "🚫"
 
         current_signal_coins.append(inst_id)
-
         message_lines.append(f"{len(current_signal_coins)}. {name} {format_change_with_emoji(daily_change)} / 거래대금: ({volume_str})")
         message_lines.append(ema_status_line)
         message_lines.append("━━━━━━━━━━━━━━━━━━━")
 
-    if current_signal_coins:
+    # 1차 발송 또는 신규 코인 발생 시 전체 전송
+    if current_signal_coins and set(current_signal_coins) != sent_coins:
         btc_id = "BTC-USDT-SWAP"
         btc_change = calculate_daily_change(btc_id)
         btc_volume = volume_map.get(btc_id, 0)
@@ -240,8 +236,7 @@ def send_top_volume_message(top_ids, volume_map):
         # 이번 조건 만족 코인을 sent_coins에 기록
         sent_coins = set(current_signal_coins)
     else:
-        logging.info("⚡ 이번 조건 만족 코인 없음 → 메시지 전송 안 함")
-        sent_coins.clear()
+        logging.info("⚡ 신규 조건 만족 코인 없음 → 메시지 전송 안 함")
 
 
 def get_all_okx_swap_symbols():
