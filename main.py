@@ -16,6 +16,9 @@ bot = telepot.Bot(telegram_bot_token)
 
 logging.basicConfig(level=logging.INFO)
 
+# 전역 변수로 마지막 조건 만족 코인 기록
+sent_coins = set()
+
 
 def send_telegram_message(message):
     for retry_count in range(1, 11):
@@ -189,12 +192,13 @@ def calculate_1h_volume(inst_id):
 
 
 def send_top_volume_message(top_ids, volume_map):
+    global sent_coins
     message_lines = [
         "⚡  2-3 조건 기반 롱·숏 감지",
         "━━━━━━━━━━━━━━━━━━━",
     ]
 
-    signal_found = False
+    current_signal_coins = []
 
     for i, inst_id in enumerate(top_ids, 1):
         name = inst_id.replace("-USDT-SWAP", "")
@@ -203,9 +207,6 @@ def send_top_volume_message(top_ids, volume_map):
         if signal_type is None:
             continue
 
-        # 신호가 유지되어도 계속 메시지 전송
-        signal_found = True
-
         daily_change = calculate_daily_change(inst_id)
         if daily_change is None or daily_change <= -100:
             continue
@@ -213,11 +214,13 @@ def send_top_volume_message(top_ids, volume_map):
         volume_1h = volume_map.get(inst_id, 0)
         volume_str = format_volume_in_eok(volume_1h) or "🚫"
 
-        message_lines.append(f"{i}. {name} {format_change_with_emoji(daily_change)} / 거래대금: ({volume_str})")
+        current_signal_coins.append(inst_id)
+
+        message_lines.append(f"{len(current_signal_coins)}. {name} {format_change_with_emoji(daily_change)} / 거래대금: ({volume_str})")
         message_lines.append(ema_status_line)
         message_lines.append("━━━━━━━━━━━━━━━━━━━")
 
-    if signal_found:
+    if current_signal_coins:
         btc_id = "BTC-USDT-SWAP"
         btc_change = calculate_daily_change(btc_id)
         btc_volume = volume_map.get(btc_id, 0)
@@ -230,10 +233,15 @@ def send_top_volume_message(top_ids, volume_map):
             btc_status_line,
             "━━━━━━━━━━━━━━━━━━━"
         ]
+
         full_message = "\n".join(btc_lines + message_lines)
         send_telegram_message(full_message)
+
+        # 이번 조건 만족 코인을 sent_coins에 기록
+        sent_coins = set(current_signal_coins)
     else:
-        logging.info("⚡ 조건 만족 코인 없음 → 메시지 전송 안 함")
+        logging.info("⚡ 이번 조건 만족 코인 없음 → 메시지 전송 안 함")
+        sent_coins.clear()
 
 
 def get_all_okx_swap_symbols():
