@@ -7,6 +7,7 @@ import threading
 import uvicorn
 import logging
 import pandas as pd
+from tvDatafeed import TvDatafeed, Interval   # 🔹 USDT Dominance 가져오기 위해 추가
 
 app = FastAPI()
 
@@ -18,6 +19,9 @@ logging.basicConfig(level=logging.INFO)
 
 # ===== 각 코인별 마지막 신호 상태 저장 =====
 last_signal_state = {}
+
+# === TradingView 세션 연결 ===
+tv = TvDatafeed()
 
 def send_telegram_message(message):
     for retry_count in range(1, 11):
@@ -77,6 +81,21 @@ def get_ohlcv_okx(instId, bar='1H', limit=200):
     except Exception as e:
         logging.error(f"{instId} OHLCV 파싱 실패: {e}")
         return None
+
+
+# === USDT Dominance 조회 ===
+def get_usdt_dominance():
+    try:
+        df = tv.get_hist(symbol='USDT.D', exchange='CRYPTOCAP', interval=Interval.in_1_hour, n_bars=50)
+        if df is None or df.empty:
+            return None, None
+        close = df['close'].iloc[-1]
+        prev_close = df['close'].iloc[-2]
+        change = round(((close - prev_close) / prev_close) * 100, 2)
+        return close, change
+    except Exception as e:
+        logging.error(f"USDT 도미넌스 조회 실패: {e}")
+        return None, None
 
 
 # === EMA 상태 계산 (숏: 1D 역배열 + 4H 데드크로스) ===
@@ -213,6 +232,14 @@ def send_top10_volume_message(top_10_ids, volume_map):
         message_lines.append("━━━━━━━━━━━━━━━━━━━")
 
     if signal_found:
+        # === USDT 도미넌스 현황 ===
+        usdt_dom, usdt_dom_change = get_usdt_dominance()
+        if usdt_dom is not None:
+            usdt_dom_line = f"💹 USDT Dominance: {usdt_dom:.2f}% {format_change_with_emoji(usdt_dom_change)}"
+        else:
+            usdt_dom_line = "💹 USDT Dominance: ❌ 조회 실패"
+
+        # === BTC 현황 ===
         btc_id = "BTC-USDT-SWAP"
         btc_change = calculate_daily_change(btc_id)
         btc_volume = volume_map.get(btc_id, 0)
@@ -220,6 +247,7 @@ def send_top10_volume_message(top_10_ids, volume_map):
         btc_status_line, _ = get_ema_status_line(btc_id)
 
         btc_lines = [
+            usdt_dom_line,     # 🔹 USDT.D 먼저 출력
             "📌 BTC 현황",
             f"BTC {format_change_with_emoji(btc_change)} / 거래대금: ({btc_volume_str})",
             btc_status_line,
