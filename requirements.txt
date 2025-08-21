@@ -13,6 +13,7 @@ itsdangerous==2.1.2
 Jinja2==3.1.2
 MarkupSafe==2.1.1
 orjson==3.8.0
+pybithumb
 pydantic==1.10.1
 python-dotenv==0.21.0
 python-multipart==0.0.5
@@ -28,7 +29,6 @@ uvicorn==0.17.6
 uvloop==0.16.0
 watchgod==0.8.2
 websockets==10.3
-pybithumb
 pyupbit
 apscheduler
 python-telegram-bot
@@ -40,12 +40,5 @@ ccxtpro
 httpx
 pandas
 ccxt
-fastapi
-uvicorn
-pandas
-telepot
-schedule
-requests
-tvdatafeed
 
 
