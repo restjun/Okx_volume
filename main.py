@@ -4,37 +4,30 @@ import schedule
 import time
 import requests
 import threading
-import uvicorn
 import logging
 import pandas as pd
-from tvDatafeed import TvDatafeed, Interval   # 🔹 USDT Dominance 가져오기 위해 추가
 
 app = FastAPI()
 
+# ====== Telegram Bot 설정 ======
 telegram_bot_token = "8451481398:AAHHg2wVDKphMruKsjN2b6NFKJ50jhxEe-g"
 telegram_user_id = 6596886700
 bot = telepot.Bot(telegram_bot_token)
 
 logging.basicConfig(level=logging.INFO)
 
-# ===== 각 코인별 마지막 신호 상태 저장 =====
-last_signal_state = {}
-
-# === TradingView 세션 연결 ===
-tv = TvDatafeed()
-
 def send_telegram_message(message):
     for retry_count in range(1, 11):
         try:
-            bot.sendMessage(chat_id=telegram_user_id, text=message)
-            logging.info("텔레그램 메시지 전송 성공")
+            bot.sendMessage(chat_id=telegram_user_id, text=message, parse_mode="Markdown")
+            logging.info("텔레그램 메시지 전송 성공: %s", message)
             return
         except Exception as e:
-            logging.error(f"텔레그램 메시지 전송 실패 (재시도 {retry_count}/10): {e}")
+            logging.error("텔레그램 메시지 전송 실패 (재시도 %d/10): %s", retry_count, str(e))
             time.sleep(5)
-    logging.error("텔레그램 메시지 전송 실패: 최대 재시도 초과")
+    logging.error("텔레그램 메시지 전송 실패: 최대 재시도 횟수 초과")
 
-
+# ====== 요청 재시도 함수 ======
 def retry_request(func, *args, **kwargs):
     for attempt in range(10):
         try:
@@ -44,16 +37,15 @@ def retry_request(func, *args, **kwargs):
                 continue
             return result
         except Exception as e:
-            logging.error(f"API 호출 실패 (재시도 {attempt+1}/10): {e}")
+            logging.error(f"API 호출 실패 (재시도 {attempt+1}/10): {str(e)}")
             time.sleep(5)
     return None
 
-
+# ====== OHLCV & EMA 계산 ======
 def calculate_ema(close, period):
     if len(close) < period:
         return None
     return pd.Series(close).ewm(span=period, adjust=False).mean().iloc[-1]
-
 
 def get_ema_with_retry(close, period):
     for _ in range(5):
@@ -62,7 +54,6 @@ def get_ema_with_retry(close, period):
             return result
         time.sleep(0.5)
     return None
-
 
 def get_ohlcv_okx(instId, bar='1H', limit=200):
     url = f"https://www.okx.com/api/v5/market/candles?instId={instId}&bar={bar}&limit={limit}"
@@ -82,70 +73,28 @@ def get_ohlcv_okx(instId, bar='1H', limit=200):
         logging.error(f"{instId} OHLCV 파싱 실패: {e}")
         return None
 
+def get_ema_icon(close):
+    ema_3 = get_ema_with_retry(close, 3)
+    ema_5 = get_ema_with_retry(close, 5)
+    if ema_3 is None or ema_5 is None:
+        return "[❌]"
+    return "[🟩]" if ema_3 > ema_5 else "[🟥]"
 
-# === USDT Dominance 조회 ===
-def get_usdt_dominance():
+def get_all_timeframe_ema_status(inst_id):
     try:
-        df = tv.get_hist(symbol='USDT.D', exchange='CRYPTOCAP', interval=Interval.in_1_hour, n_bars=50)
-        if df is None or df.empty:
-            return None, None
-        close = df['close'].iloc[-1]
-        prev_close = df['close'].iloc[-2]
-        change = round(((close - prev_close) / prev_close) * 100, 2)
-        return close, change
+        df_1h = get_ohlcv_okx(inst_id, bar="1H", limit=100)
+        df_4h = get_ohlcv_okx(inst_id, bar="4H", limit=100)
+        df_1d = get_ohlcv_okx(inst_id, bar="1D", limit=100)
+        if df_1h is None or df_4h is None or df_1d is None:
+            return None
+        return {
+            "1H": get_ema_icon(df_1h['c'].values),
+            "4H": get_ema_icon(df_4h['c'].values),
+            "1D": get_ema_icon(df_1d['c'].values)
+        }
     except Exception as e:
-        logging.error(f"USDT 도미넌스 조회 실패: {e}")
-        return None, None
-
-
-# === EMA 상태 계산 (숏: 1D 역배열 + 4H 데드크로스) ===
-def get_ema_status_line(inst_id):
-    try:
-        # --- 1D EMA (3-5) ---
-        df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=300)
-        if df_1d is None:
-            daily_status = "[1D] ❌"
-            daily_ok_short = False
-        else:
-            closes_1d = df_1d['c'].values
-            ema_3_1d = get_ema_with_retry(closes_1d, 3)
-            ema_5_1d = get_ema_with_retry(closes_1d, 5)
-            if None in [ema_3_1d, ema_5_1d]:
-                daily_status = "[1D] ❌"
-                daily_ok_short = False
-            else:
-                daily_status = f"[1D] 📊: {'🟥' if ema_3_1d < ema_5_1d else '🟩'}"
-                daily_ok_short = ema_3_1d < ema_5_1d   # 1D 3-5 역배열
-
-        # --- 4H EMA (3-5) ---
-        df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=50)
-        if df_4h is None or len(df_4h) < 2:
-            fourh_status = "[4H] ❌"
-            dead_cross = False
-        else:
-            closes_4h = df_4h['c'].values
-            ema_3_series = pd.Series(closes_4h).ewm(span=3, adjust=False).mean()
-            ema_5_series = pd.Series(closes_4h).ewm(span=5, adjust=False).mean()
-
-            # 데드크로스 발생 여부 (직전 캔들과 비교)
-            dead_cross = ema_3_series.iloc[-2] >= ema_5_series.iloc[-2] and ema_3_series.iloc[-1] < ema_5_series.iloc[-1]
-
-            fourh_status = f"[4H] 📊: {'🟩' if ema_3_series.iloc[-1] > ema_5_series.iloc[-1] else '🟥'}"
-
-        # ⚡ 숏 조건: 1D 3-5 역배열 + 4H 3-5 데드크로스 발생
-        if daily_ok_short and dead_cross:
-            signal = " ⚡⚡⚡(숏)"
-            signal_type = "short"
-        else:
-            signal = ""
-            signal_type = None
-
-        return f"{daily_status} | {fourh_status}{signal}", signal_type
-
-    except Exception as e:
-        logging.error(f"{inst_id} EMA 상태 계산 실패: {e}")
-        return "[1D/4H] ❌", None
-
+        logging.error(f"{inst_id} EMA 상태 가져오기 실패: {e}")
+        return None
 
 def calculate_daily_change(inst_id):
     df = get_ohlcv_okx(inst_id, bar="1H", limit=48)
@@ -156,11 +105,7 @@ def calculate_daily_change(inst_id):
         df['datetime_kst'] = df['datetime'] + pd.Timedelta(hours=9)
         df.set_index('datetime_kst', inplace=True)
         daily = df.resample('1D', offset='9h').agg({
-            'o': 'first',
-            'h': 'max',
-            'l': 'min',
-            'c': 'last',
-            'vol': 'sum'
+            'o': 'first', 'h': 'max', 'l': 'min', 'c': 'last', 'vol': 'sum'
         }).dropna().sort_index(ascending=False).reset_index()
         if len(daily) < 2:
             return None
@@ -171,94 +116,24 @@ def calculate_daily_change(inst_id):
         logging.error(f"{inst_id} 상승률 계산 오류: {e}")
         return None
 
-
 def format_volume_in_eok(volume):
     try:
         eok = int(volume // 1_000_000)
-        return str(eok) if eok >= 1 else None
+        return str(eok) if eok >= 0 else None
     except:
         return None
-
 
 def format_change_with_emoji(change):
     if change is None:
         return "(N/A)"
     if change >= 5:
-        return f"🚨🚨🚨 (+{change:.2f}%)"
+        return f"🚨 (+{change:.2f}%)"
     elif change > 0:
         return f"🟢 (+{change:.2f}%)"
     else:
         return f"🔴 ({change:.2f}%)"
 
-
-def calculate_1h_volume(inst_id):
-    df = get_ohlcv_okx(inst_id, bar="1H", limit=24)
-    if df is None or len(df) < 1:
-        return 0
-    return df["volCcyQuote"].sum()
-
-
-def send_top10_volume_message(top_10_ids, volume_map):
-    message_lines = [
-        "⚡  3-5 조건 기반 숏 감지",
-        "━━━━━━━━━━━━━━━━━━━",
-    ]
-
-    signal_found = False
-
-    for i, inst_id in enumerate(top_10_ids, 1):
-        name = inst_id.replace("-USDT-SWAP", "")
-        ema_status_line, signal_type = get_ema_status_line(inst_id)
-
-        if signal_type != "short":
-            last_signal_state[inst_id] = None
-            continue
-
-        # 신호 발생 시 1회만 메시지 전송
-        if last_signal_state.get(inst_id) == "short":
-            continue
-        last_signal_state[inst_id] = "short"
-        signal_found = True
-
-        daily_change = calculate_daily_change(inst_id)
-        if daily_change is None or daily_change <= -100:
-            continue
-
-        volume_1h = volume_map.get(inst_id, 0)
-        volume_str = format_volume_in_eok(volume_1h) or "🚫"
-
-        message_lines.append(f"{i}. {name} {format_change_with_emoji(daily_change)} / 거래대금: ({volume_str})")
-        message_lines.append(ema_status_line)
-        message_lines.append("━━━━━━━━━━━━━━━━━━━")
-
-    if signal_found:
-        # === USDT 도미넌스 현황 ===
-        usdt_dom, usdt_dom_change = get_usdt_dominance()
-        if usdt_dom is not None:
-            usdt_dom_line = f"💹 USDT Dominance: {usdt_dom:.2f}% {format_change_with_emoji(usdt_dom_change)}"
-        else:
-            usdt_dom_line = "💹 USDT Dominance: ❌ 조회 실패"
-
-        # === BTC 현황 ===
-        btc_id = "BTC-USDT-SWAP"
-        btc_change = calculate_daily_change(btc_id)
-        btc_volume = volume_map.get(btc_id, 0)
-        btc_volume_str = format_volume_in_eok(btc_volume) or "🚫"
-        btc_status_line, _ = get_ema_status_line(btc_id)
-
-        btc_lines = [
-            usdt_dom_line,     # 🔹 USDT.D 먼저 출력
-            "📌 BTC 현황",
-            f"BTC {format_change_with_emoji(btc_change)} / 거래대금: ({btc_volume_str})",
-            btc_status_line,
-            "━━━━━━━━━━━━━━━━━━━"
-        ]
-        full_message = "\n".join(btc_lines + message_lines)
-        send_telegram_message(full_message)
-    else:
-        logging.info("⚡ 조건 만족 코인 없음 → 메시지 전송 안 함")
-
-
+# ====== OKX 심볼 가져오기 ======
 def get_all_okx_swap_symbols():
     url = "https://www.okx.com/api/v5/public/instruments?instType=SWAP"
     response = retry_request(requests.get, url)
@@ -267,32 +142,34 @@ def get_all_okx_swap_symbols():
     data = response.json().get("data", [])
     return [item["instId"] for item in data if "USDT" in item["instId"]]
 
+# ====== 알림 스케줄러 ======
+def check_and_notify():
+    symbols = get_all_okx_swap_symbols()
+    for inst_id in symbols:
+        ema_status = get_all_timeframe_ema_status(inst_id)
+        if ema_status is None:
+            continue
 
-def main():
-    logging.info("📥 거래대금 분석 시작")
-    all_ids = get_all_okx_swap_symbols()
-    volume_map = {}
+        df = get_ohlcv_okx(inst_id, bar="1H", limit=1)
+        if df is None or len(df) == 0:
+            continue
+        volume_eok = format_volume_in_eok(df['vol'].iloc[-1])
+        change = calculate_daily_change(inst_id)
+        change_str = format_change_with_emoji(change)
 
-    for inst_id in all_ids:
-        vol_1h = calculate_1h_volume(inst_id)
-        volume_map[inst_id] = vol_1h
-        time.sleep(0.05)
-
-    top_10_ids = [inst_id for inst_id, _ in sorted(volume_map.items(), key=lambda x: x[1], reverse=True)[:20]]
-    send_top10_volume_message(top_10_ids, volume_map)
-
+        if volume_eok is not None and int(volume_eok) >= 300:  # 300억 이상 필터
+            message = f"{inst_id}\nEMA: {ema_status['1H']} | {ema_status['4H']} | {ema_status['1D']}\n거래대금: {volume_eok}억\n변동률: {change_str}"
+            send_telegram_message(message)
 
 def run_scheduler():
+    schedule.every(1).minutes.do(check_and_notify)
     while True:
         schedule.run_pending()
         time.sleep(1)
 
+# ====== 백그라운드 스레드로 스케줄러 실행 ======
+threading.Thread(target=run_scheduler, daemon=True).start()
 
-@app.on_event("startup")
-def start_scheduler():
-    schedule.every(1).minutes.do(main)
-    threading.Thread(target=run_scheduler, daemon=True).start()
-
-
-if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+@app.get("/")
+def read_root():
+    return {"status": "OK, Telegram bot running"}
