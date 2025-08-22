@@ -85,14 +85,14 @@ def get_ema_status_line(inst_id):
         # === 일봉 EMA 3-5 ===
         df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=300)
         if df_1d is None:
-            return "[1D/4H] ❌", None
+            return "[1D/1H] ❌", None
 
         closes_1d = df_1d['c'].values
         ema_3_1d = get_ema_with_retry(closes_1d, 3)
         ema_5_1d = get_ema_with_retry(closes_1d, 5)
 
         if None in [ema_3_1d, ema_5_1d]:
-            return "[1D/4H] ❌", None
+            return "[1D/1H] ❌", None
 
         if ema_3_1d > ema_5_1d:
             daily_status = "[1D] 3-5 정배열 🟩"
@@ -101,39 +101,39 @@ def get_ema_status_line(inst_id):
             daily_status = "[1D] 3-5 역배열 🟥"
             daily_trend = "bear"
 
-        # === 4시간봉 EMA 3-5 ===
-        df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=50)
-        if df_4h is None or len(df_4h) < 5:
-            return f"{daily_status} | [4H] ❌", None
+        # === 1시간봉 EMA 3-5 ===
+        df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=50)
+        if df_1h is None or len(df_1h) < 5:
+            return f"{daily_status} | [1H] ❌", None
 
-        closes_4h = df_4h['c'].values
-        ema_3_series = pd.Series(closes_4h).ewm(span=3, adjust=False).mean()
-        ema_5_series = pd.Series(closes_4h).ewm(span=5, adjust=False).mean()
+        closes_1h = df_1h['c'].values
+        ema_3_series = pd.Series(closes_1h).ewm(span=3, adjust=False).mean()
+        ema_5_series = pd.Series(closes_1h).ewm(span=5, adjust=False).mean()
 
         golden_cross = ema_3_series.iloc[-2] <= ema_5_series.iloc[-2] and ema_3_series.iloc[-1] > ema_5_series.iloc[-1]
         dead_cross = ema_3_series.iloc[-2] >= ema_5_series.iloc[-2] and ema_3_series.iloc[-1] < ema_5_series.iloc[-1]
 
-        fourh_status = f"[4H] {'🟩' if ema_3_series.iloc[-1] > ema_5_series.iloc[-1] else '🟥'}"
+        oneh_status = f"[1H] {'🟩' if ema_3_series.iloc[-1] > ema_5_series.iloc[-1] else '🟥'}"
 
         # === 신호 판별 ===
         signal_type = None
         signal = ""
 
-        # 롱 조건: 일봉 역배열 + 4H 골든크로스
+        # 롱 조건: 일봉 역배열 + 1H 골든크로스
         if daily_trend == "bear" and golden_cross:
             signal_type = "long"
             signal = " 🚀🚀🚀(롱)"
 
-        # 숏 조건: 일봉 정배열 + 4H 데드크로스
+        # 숏 조건: 일봉 정배열 + 1H 데드크로스
         elif daily_trend == "bull" and dead_cross:
             signal_type = "short"
             signal = " ⚡⚡⚡(숏)"
 
-        return f"{daily_status} | {fourh_status}{signal}", signal_type
+        return f"{daily_status} | {oneh_status}{signal}", signal_type
 
     except Exception as e:
         logging.error(f"{inst_id} EMA 상태 계산 실패: {e}")
-        return "[1D/4H] ❌", None
+        return "[1D/1H] ❌", None
 
 
 def calculate_daily_change(inst_id):
@@ -181,7 +181,7 @@ def format_change_with_emoji(change):
 
 
 def calculate_1h_volume(inst_id):
-    df = get_ohlcv_okx(inst_id, bar="1H", limit=4)
+    df = get_ohlcv_okx(inst_id, bar="1H", limit=24)
     if df is None or len(df) < 1:
         return 0
     return df["volCcyQuote"].sum()
