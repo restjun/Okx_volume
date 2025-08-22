@@ -190,7 +190,7 @@ def calculate_1h_volume(inst_id):
 def send_top_volume_message(top_ids, volume_map):
     global sent_coins
     message_lines = [
-        "⚡  3-5 조건 기반 롱·숏 감지",
+        "⚡  3-5 역추세매매",
         "━━━━━━━━━━━━━━━━━━━",
     ]
 
