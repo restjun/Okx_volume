@@ -10,8 +10,8 @@ import pandas as pd
 
 app = FastAPI()
 
-telegram_bot_token = "YOUR_TELEGRAM_BOT_TOKEN"
-telegram_user_id = YOUR_USER_ID
+telegram_bot_token = "8451481398:AAHHg2wVDKphMruKsjN2b6NFKJ50jhxEe-g"
+telegram_user_id = 6596886700
 bot = telepot.Bot(telegram_bot_token)
 
 logging.basicConfig(level=logging.INFO)
