@@ -248,7 +248,7 @@ def main():
         if signal_type is None:
             continue
         daily_change = calculate_daily_change(inst_id)
-        if daily_change is None or daily_change <= -100:
+        if daily_change is None or daily_change <= 0:
             continue
         candidate_coins.append(inst_id)
 
