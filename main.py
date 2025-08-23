@@ -187,7 +187,7 @@ def calculate_1h_volume(inst_id):
 
 def send_top_volume_message(top_ids, volume_map):
     message_lines = [
-        "⚡  3-5 추세매매 거래대금 4시간기준,
+        "⚡  3-5 추세매매 거래대금 4시간기준",
         "━━━━━━━━━━━━━━━━━━━",
     ]
 
