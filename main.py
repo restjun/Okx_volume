@@ -187,7 +187,7 @@ def calculate_1h_volume(inst_id):
 
 def send_top_volume_message(top_ids, volume_map):
     message_lines = [
-        "⚡  3-5 추세매매",
+        "⚡  3-5 추세매매 거래대금 순서",
         "━━━━━━━━━━━━━━━━━━━",
     ]
 
@@ -198,7 +198,7 @@ def send_top_volume_message(top_ids, volume_map):
         if signal_type is None:
             continue
         daily_change = calculate_daily_change(inst_id)
-        if daily_change is None or daily_change <= -100:
+        if daily_change is None or daily_change <= 0:
             continue
         current_signal_coins.append(inst_id)
 
