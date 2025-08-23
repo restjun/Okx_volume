@@ -102,21 +102,21 @@ def get_ema_status_line(inst_id):
                     daily_ok_long = False
                     daily_ok_short = True
 
-        # 1H EMA 3-5로 변경
-        df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=50)
-        if df_1h is None or len(df_1h) < 5:  # 최소 5개 필요
-            oneh_status = "[1H] ❌"
+        # ✅ 4H EMA 3-5 계산 (기존 1H → 변경됨)
+        df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=50)
+        if df_4h is None or len(df_4h) < 5:  # 최소 5개 필요
+            fourh_status = "[4H] ❌"
             golden_cross = False
             dead_cross = False
         else:
-            closes_1h = df_1h['c'].values
-            ema_3_series = pd.Series(closes_1h).ewm(span=3, adjust=False).mean()
-            ema_5_series = pd.Series(closes_1h).ewm(span=5, adjust=False).mean()
+            closes_4h = df_4h['c'].values
+            ema_3_series = pd.Series(closes_4h).ewm(span=3, adjust=False).mean()
+            ema_5_series = pd.Series(closes_4h).ewm(span=5, adjust=False).mean()
             golden_cross = ema_3_series.iloc[-2] <= ema_5_series.iloc[-2] and ema_3_series.iloc[-1] > ema_5_series.iloc[-1]
             dead_cross = ema_3_series.iloc[-2] >= ema_5_series.iloc[-2] and ema_3_series.iloc[-1] < ema_5_series.iloc[-1]
-            oneh_status = f"[1H] 📊: {'🟩' if ema_3_series.iloc[-1] > ema_5_series.iloc[-1] else '🟥'}"
+            fourh_status = f"[4H] 📊: {'🟩' if ema_3_series.iloc[-1] > ema_5_series.iloc[-1] else '🟥'}"
 
-        # 롱/숏 신호 판단 (1H 기준)
+        # 롱/숏 신호 판단 (4H 기준)
         if daily_ok_long and golden_cross:
             signal_type = "long"
             signal = " 🚀🚀🚀(롱)"
@@ -127,11 +127,11 @@ def get_ema_status_line(inst_id):
             signal_type = None
             signal = ""
 
-        return f"{daily_status} | {oneh_status}{signal}", signal_type
+        return f"{daily_status} | {fourh_status}{signal}", signal_type
 
     except Exception as e:
         logging.error(f"{inst_id} EMA 상태 계산 실패: {e}")
-        return "[1D/1H] ❌", None
+        return "[1D/4H] ❌", None
 
 
 def calculate_daily_change(inst_id):
@@ -187,7 +187,7 @@ def calculate_1h_volume(inst_id):
 
 def send_top_volume_message(top_ids, volume_map):
     message_lines = [
-        "⚡  3-5 추세매매 거래대금 순서",
+        "⚡  3-5 추세매매 거래대금 4시간기준,
         "━━━━━━━━━━━━━━━━━━━",
     ]
 
