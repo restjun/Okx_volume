@@ -310,7 +310,7 @@ def main():
         volume_map[inst_id] = vol_1h
         time.sleep(0.05)
 
-    top_ids = [inst_id for inst_id, _ in sorted(volume_map.items(), key=lambda x: x[1], reverse=True)[:200]]
+    top_ids = [inst_id for inst_id, _ in sorted(volume_map.items(), key=lambda x: x[1], reverse=True)[:20]]
     send_top_volume_message(top_ids, volume_map)
 
 
