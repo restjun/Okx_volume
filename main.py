@@ -16,6 +16,9 @@ bot = telepot.Bot(telegram_bot_token)
 
 logging.basicConfig(level=logging.INFO)
 
+# 🔹 전역 변수: 이미 메시지 전송한 코인 저장
+sent_signal_coins = set()
+
 
 def send_telegram_message(message):
     for retry_count in range(1, 11):
@@ -167,6 +170,7 @@ def calculate_1h_volume(inst_id):
 
 
 def send_top_volume_message(top_ids, volume_map):
+    global sent_signal_coins
     message_lines = [
         "⚡  1H MFI 5일선 70 이상 돌파 코인",
         "━━━━━━━━━━━━━━━━━━━",
@@ -187,8 +191,16 @@ def send_top_volume_message(top_ids, volume_map):
         current_signal_coins.append((inst_id, mfi_status_line, daily_change, volume_1h, actual_rank))
 
     if current_signal_coins:
-        current_signal_coins.sort(key=lambda x: x[3], reverse=True)
+        # 신규 코인 확인
+        new_coins = [c[0] for c in current_signal_coins if c[0] not in sent_signal_coins]
+        if not new_coins:
+            logging.info("⚡ 신규 조건 코인 없음 → 메시지 전송 안 함")
+            return
 
+        # 전송 후 세트에 추가
+        sent_signal_coins.update(new_coins)
+
+        # BTC 정보
         btc_id = "BTC-USDT-SWAP"
         btc_change = calculate_daily_change(btc_id)
         btc_volume = volume_map.get(btc_id, 0)
@@ -203,7 +215,11 @@ def send_top_volume_message(top_ids, volume_map):
         ]
         message_lines += btc_lines
 
-        for rank, (inst_id, mfi_line, daily_change, volume_1h, actual_rank) in enumerate(current_signal_coins, start=1):
+        # 전체 조건 코인 메시지 전송
+        all_coins_to_send = [c for c in current_signal_coins if c[0] in sent_signal_coins]
+        all_coins_to_send.sort(key=lambda x: x[3], reverse=True)
+
+        for rank, (inst_id, mfi_line, daily_change, volume_1h, actual_rank) in enumerate(all_coins_to_send, start=1):
             name = inst_id.replace("-USDT-SWAP", "")
             volume_str = format_volume_in_eok(volume_1h) or "🚫"
             message_lines.append(
