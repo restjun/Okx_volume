@@ -10,7 +10,6 @@ import pandas as pd
 
 app = FastAPI()
 
-
 telegram_bot_token = "8451481398:AAHHg2wVDKphMruKsjN2b6NFKJ50jhxEe-g"
 telegram_user_id = 6596886700
 bot = telepot.Bot(telegram_bot_token)
@@ -69,7 +68,7 @@ def get_ohlcv_okx(instId, bar='1H', limit=200):
         return None
 
 
-# 🔹 트레이딩뷰 호환 MFI 계산 함수 (5일선)
+# 🔹 MFI 계산 함수
 def calc_mfi(df, period=5):
     tp = (df['h'] + df['l'] + df['c']) / 3
     rmf = tp * df['vol']
@@ -97,7 +96,7 @@ def calc_mfi(df, period=5):
     return mfi
 
 
-# 🔹 트레이딩뷰 호환 RSI 계산 함수 (Wilder's RSI, 5일선)
+# 🔹 RSI 계산 함수
 def calc_rsi(df, period=5):
     delta = df['c'].diff()
     gain = delta.where(delta > 0, 0.0)
@@ -111,55 +110,78 @@ def calc_rsi(df, period=5):
     return rsi
 
 
-def get_mfi_status_line(inst_id, period=5, mfi_threshold=70):
-    try:
-        df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=100)
-        if df_1h is None or len(df_1h) < period:
-            return "[1H MFI] ❌", False
+# 🔹 MFI 상태 라인
+def get_mfi_status_line(inst_id, period=5, mfi_threshold=70, return_raw=False):
+    df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=100)
+    if df_1h is None or len(df_1h) < period:
+        return ("[1H MFI] ❌", False) if not return_raw else ("[1H MFI] ❌", False, None, None)
+    
+    mfi_series = calc_mfi(df_1h, period)
+    last, prev = mfi_series.iloc[-1], mfi_series.iloc[-2]
 
-        mfi_series = calc_mfi(df_1h, period)
+    line = f"[1H MFI] {last:.2f}"
+    signal = prev < mfi_threshold <= last
 
-        if mfi_series.iloc[-2] < mfi_threshold <= mfi_series.iloc[-1]:
-            return f"[1H MFI] 🚨 MFI 돌파: {mfi_series.iloc[-1]:.2f}", True
-        else:
-            return f"[1H MFI] {mfi_series.iloc[-1]:.2f}", False
-
-    except Exception as e:
-        logging.error(f"{inst_id} MFI 계산 실패: {e}")
-        return "[1H MFI] ❌", False
-
-
-def get_rsi_status_line(inst_id, period=5, threshold=70):
-    try:
-        df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=100)
-        if df_1h is None or len(df_1h) < period:
-            return "[1H RSI] ❌", False
-
-        rsi_series = calc_rsi(df_1h, period)
-
-        if rsi_series.iloc[-2] < threshold <= rsi_series.iloc[-1]:
-            return f"[1H RSI] 🚨 RSI 돌파: {rsi_series.iloc[-1]:.2f}", True
-        else:
-            return f"[1H RSI] {rsi_series.iloc[-1]:.2f}", False
-
-    except Exception as e:
-        logging.error(f"{inst_id} RSI 계산 실패: {e}")
-        return "[1H RSI] ❌", False
+    if return_raw:
+        return line, signal, last, prev
+    return line, signal
 
 
-# 🔹 MFI + RSI 통합 조건
+# 🔹 RSI 상태 라인
+def get_rsi_status_line(inst_id, period=5, threshold=70, return_raw=False):
+    df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=100)
+    if df_1h is None or len(df_1h) < period:
+        return ("[1H RSI] ❌", False) if not return_raw else ("[1H RSI] ❌", False, None, None)
+    
+    rsi_series = calc_rsi(df_1h, period)
+    last, prev = rsi_series.iloc[-1], rsi_series.iloc[-2]
+
+    line = f"[1H RSI] {last:.2f}"
+    signal = prev < threshold <= last
+
+    if return_raw:
+        return line, signal, last, prev
+    return line, signal
+
+
+# 🔹 통합 조건 함수
 def get_signal_status_line(inst_id, mfi_period=5, rsi_period=5, threshold=70):
-    mfi_line, mfi_signal = get_mfi_status_line(inst_id, period=mfi_period, mfi_threshold=threshold)
-    rsi_line, rsi_signal = get_rsi_status_line(inst_id, period=rsi_period, threshold=threshold)
+    mfi_line, mfi_signal, mfi_last, mfi_prev = get_mfi_status_line(inst_id, period=mfi_period, mfi_threshold=threshold, return_raw=True)
+    rsi_line, rsi_signal, rsi_last, rsi_prev = get_rsi_status_line(inst_id, period=rsi_period, threshold=threshold, return_raw=True)
 
-    if (mfi_signal or rsi_signal):
-        if mfi_signal and rsi_signal:
-            return f"{mfi_line}\n{rsi_line}\n🚨🚨🚨 MFI & RSI 동시 돌파", True
-        return f"{mfi_line}\n{rsi_line}", True
+    signal_triggered = False
+    extra_msg = ""
+
+    # 조건 1: MFI ≥ 70 상태에서 RSI가 70 돌파
+    if mfi_last >= threshold and rsi_prev < threshold and rsi_last >= threshold:
+        signal_triggered = True
+        extra_msg = "🚨 RSI 70 돌파 (MFI≥70)"
+
+    # 조건 2: RSI ≥ 70 상태에서 MFI가 70 돌파
+    elif rsi_last >= threshold and mfi_prev < threshold and mfi_last >= threshold:
+        signal_triggered = True
+        extra_msg = "🚨 MFI 70 돌파 (RSI≥70)"
+
+    # 조건 3: 동시에 돌파
+    elif (mfi_prev < threshold and mfi_last >= threshold) and (rsi_prev < threshold and rsi_last >= threshold):
+        signal_triggered = True
+        extra_msg = "🚨🚨🚨 MFI & RSI 동시 돌파"
+
+    if signal_triggered:
+        return f"{mfi_line}\n{rsi_line}\n{extra_msg}", True
 
     return f"{mfi_line}\n{rsi_line}", False
 
 
+# 🔹 1시간 거래대금 계산
+def calculate_1h_volume(inst_id):
+    df = get_ohlcv_okx(inst_id, bar="1H", limit=24)
+    if df is None or len(df) < 1:
+        return 0
+    return df["volCcyQuote"].sum()
+
+
+# 🔹 상승률 계산
 def calculate_daily_change(inst_id):
     df = get_ohlcv_okx(inst_id, bar="1H", limit=48)
     if df is None or len(df) < 24:
@@ -207,13 +229,17 @@ def format_change_with_emoji(change):
         return f"🔴 ({change:.2f}%)"
 
 
-def calculate_1h_volume(inst_id):
-    df = get_ohlcv_okx(inst_id, bar="1H", limit=24)
-    if df is None or len(df) < 1:
-        return 0
-    return df["volCcyQuote"].sum()
+# 🔹 OKX USDT-SWAP 심볼 가져오기
+def get_all_okx_swap_symbols():
+    url = "https://www.okx.com/api/v5/public/instruments?instType=SWAP"
+    response = retry_request(requests.get, url)
+    if response is None:
+        return []
+    data = response.json().get("data", [])
+    return [item["instId"] for item in data if "USDT" in item["instId"]]
 
 
+# 🔹 텔레그램 메시지 전송
 def send_top_volume_message(top_ids, volume_map):
     global sent_signal_coins
     message_lines = [
@@ -273,15 +299,6 @@ def send_top_volume_message(top_ids, volume_map):
         send_telegram_message(full_message)
     else:
         logging.info("⚡ 신규 조건 만족 코인 없음 → 메시지 전송 안 함")
-
-
-def get_all_okx_swap_symbols():
-    url = "https://www.okx.com/api/v5/public/instruments?instType=SWAP"
-    response = retry_request(requests.get, url)
-    if response is None:
-        return []
-    data = response.json().get("data", [])
-    return [item["instId"] for item in data if "USDT" in item["instId"]]
 
 
 def main():
