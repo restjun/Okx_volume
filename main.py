@@ -7,6 +7,7 @@ import threading
 import uvicorn
 import logging
 import pandas as pd
+import numpy as np
 
 app = FastAPI()
 
@@ -86,8 +87,9 @@ def calc_mfi(df, period=5):
             positive_mf.append(0)
             negative_mf.append(0)
 
-    positive_mf = pd.Series([None] + positive_mf, index=df.index)
-    negative_mf = pd.Series([None] + negative_mf, index=df.index)
+    # 🔹 None 대신 np.nan 사용
+    positive_mf = pd.Series([np.nan] + positive_mf, index=df.index)
+    negative_mf = pd.Series([np.nan] + negative_mf, index=df.index)
 
     pos_mf_sum = positive_mf.rolling(window=period, min_periods=period).sum()
     neg_mf_sum = negative_mf.rolling(window=period, min_periods=period).sum()
@@ -119,8 +121,8 @@ def get_mfi_status_line(inst_id, period=5, mfi_threshold=70, return_raw=False):
     mfi_series = calc_mfi(df_1h, period)
     last, prev = mfi_series.iloc[-1], mfi_series.iloc[-2]
 
-    line = f"[1H MFI] {last:.2f}"
-    signal = prev < mfi_threshold <= last
+    line = f"[1H MFI] {last:.2f}" if pd.notna(last) else "[1H MFI] ❌"
+    signal = prev < mfi_threshold <= last if pd.notna(last) and pd.notna(prev) else False
 
     if return_raw:
         return line, signal, last, prev
@@ -136,8 +138,8 @@ def get_rsi_status_line(inst_id, period=5, threshold=70, return_raw=False):
     rsi_series = calc_rsi(df_1h, period)
     last, prev = rsi_series.iloc[-1], rsi_series.iloc[-2]
 
-    line = f"[1H RSI] {last:.2f}"
-    signal = prev < threshold <= last
+    line = f"[1H RSI] {last:.2f}" if pd.notna(last) else "[1H RSI] ❌"
+    signal = prev < threshold <= last if pd.notna(last) and pd.notna(prev) else False
 
     if return_raw:
         return line, signal, last, prev
@@ -146,24 +148,26 @@ def get_rsi_status_line(inst_id, period=5, threshold=70, return_raw=False):
 
 # 🔹 통합 조건 함수
 def get_signal_status_line(inst_id, mfi_period=5, rsi_period=5, threshold=70):
-    mfi_line, mfi_signal, mfi_last, mfi_prev = get_mfi_status_line(inst_id, period=mfi_period, mfi_threshold=threshold, return_raw=True)
-    rsi_line, rsi_signal, rsi_last, rsi_prev = get_rsi_status_line(inst_id, period=rsi_period, threshold=threshold, return_raw=True)
+    mfi_line, _, mfi_last, mfi_prev = get_mfi_status_line(inst_id, period=mfi_period, mfi_threshold=threshold, return_raw=True)
+    rsi_line, _, rsi_last, rsi_prev = get_rsi_status_line(inst_id, period=rsi_period, threshold=threshold, return_raw=True)
+
+    # 🔹 NaN / None 체크
+    if (mfi_last is None or mfi_prev is None or
+        rsi_last is None or rsi_prev is None or
+        pd.isna(mfi_last) or pd.isna(mfi_prev) or
+        pd.isna(rsi_last) or pd.isna(rsi_prev)):
+        return f"{mfi_line}\n{rsi_line}", False
 
     signal_triggered = False
     extra_msg = ""
 
-    # 조건 1: MFI ≥ 70 상태에서 RSI가 70 돌파
-    if mfi_last >= threshold and rsi_prev < threshold and rsi_last >= threshold:
+    if mfi_last >= threshold and rsi_prev < threshold <= rsi_last:
         signal_triggered = True
         extra_msg = "🚨 RSI 70 돌파 (MFI≥70)"
-
-    # 조건 2: RSI ≥ 70 상태에서 MFI가 70 돌파
-    elif rsi_last >= threshold and mfi_prev < threshold and mfi_last >= threshold:
+    elif rsi_last >= threshold and mfi_prev < threshold <= mfi_last:
         signal_triggered = True
         extra_msg = "🚨 MFI 70 돌파 (RSI≥70)"
-
-    # 조건 3: 동시에 돌파
-    elif (mfi_prev < threshold and mfi_last >= threshold) and (rsi_prev < threshold and rsi_last >= threshold):
+    elif (mfi_prev < threshold <= mfi_last) and (rsi_prev < threshold <= rsi_last):
         signal_triggered = True
         extra_msg = "🚨🚨🚨 MFI & RSI 동시 돌파"
 
