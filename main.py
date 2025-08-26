@@ -20,6 +20,7 @@ logging.basicConfig(level=logging.INFO)
 # 🔹 전역 변수: 이미 메시지 전송한 코인 저장
 sent_signal_coins = set()
 
+
 def send_telegram_message(message):
     for retry_count in range(1, 11):
         try:
@@ -143,6 +144,22 @@ def format_change_with_emoji(change):
         return f"🔴 ({change:.2f}%)"
 
 
+# 🔹 1시간 거래대금 계산 (원본 유지)
+def calculate_1h_volume(inst_id):
+    df = get_ohlcv_okx(inst_id, bar="1H", limit=24)
+    if df is None or len(df) < 1:
+        return 0
+    return df["volCcyQuote"].sum()
+
+
+def format_volume_in_eok(volume):
+    try:
+        eok = int(volume // 1_000_000)
+        return str(eok) if eok >= 1 else None
+    except:
+        return None
+
+
 # 🔹 OKX USDT-SWAP 심볼 가져오기
 def get_all_okx_swap_symbols():
     url = "https://www.okx.com/api/v5/public/instruments?instType=SWAP"
@@ -154,12 +171,14 @@ def get_all_okx_swap_symbols():
 
 
 # 🔹 텔레그램 메시지 전송 (일봉 조건만)
-def send_daily_signal_message():
+def send_top_volume_message(top_ids, volume_map):
     global sent_signal_coins
-    all_ids = get_all_okx_swap_symbols()
+    message_lines = ["⚡ 일봉 5일선 MFI/RSI≥70 필터", "━━━━━━━━━━━━━━━━━━━"]
+
     current_signal_coins = []
 
-    for inst_id in all_ids:
+    for inst_id in top_ids:
+        # 1시간 조건 제거, 일봉 조건만 체크
         if not check_daily_mfi_rsi(inst_id, period=5, threshold=70):
             continue
 
@@ -167,7 +186,8 @@ def send_daily_signal_message():
         if daily_change is None or daily_change <= 0:
             continue
 
-        current_signal_coins.append((inst_id, daily_change))
+        volume_1h = volume_map.get(inst_id, 0)
+        current_signal_coins.append((inst_id, daily_change, volume_1h))
 
     if current_signal_coins:
         new_coins = [c[0] for c in current_signal_coins if c[0] not in sent_signal_coins]
@@ -176,12 +196,29 @@ def send_daily_signal_message():
             return
 
         sent_signal_coins.update(new_coins)
-        message_lines = ["⚡ 일봉 5일선 MFI/RSI≥70 필터"]
-        message_lines.append("━━━━━━━━━━━━━━━━━━━")
-        for rank, (inst_id, daily_change) in enumerate(current_signal_coins, start=1):
+
+        # BTC 현황
+        btc_id = "BTC-USDT-SWAP"
+        btc_change = calculate_daily_change(btc_id)
+        btc_volume = volume_map.get(btc_id, 0)
+        btc_volume_str = format_volume_in_eok(btc_volume) or "🚫"
+        btc_lines = [
+            "📌 BTC 현황",
+            f"BTC {format_change_with_emoji(btc_change)} / 거래대금: ({btc_volume_str})",
+            "━━━━━━━━━━━━━━━━━━━"
+        ]
+        message_lines += btc_lines
+
+        # 코인 순위
+        current_signal_coins.sort(key=lambda x: x[2], reverse=True)
+        for rank, (inst_id, daily_change, volume_1h) in enumerate(current_signal_coins, start=1):
             name = inst_id.replace("-USDT-SWAP", "")
-            message_lines.append(f"{rank}. {name} {format_change_with_emoji(daily_change)}")
+            volume_str = format_volume_in_eok(volume_1h) or "🚫"
+            message_lines.append(
+                f"{rank}. {name} {format_change_with_emoji(daily_change)} / 거래대금: ({volume_str})"
+            )
             message_lines.append("━━━━━━━━━━━━━━━━━━━")
+
         full_message = "\n".join(message_lines)
         send_telegram_message(full_message)
     else:
@@ -189,8 +226,10 @@ def send_daily_signal_message():
 
 
 def main():
-    logging.info("📥 일봉 조건 분석 시작")
-    send_daily_signal_message()
+    logging.info("📥 거래대금 분석 시작")
+    all_ids = get_all_okx_swap_symbols()
+    volume_map = {inst_id: calculate_1h_volume(inst_id) for inst_id in all_ids}
+    send_top_volume_message(all_ids, volume_map)
 
 
 def run_scheduler():
