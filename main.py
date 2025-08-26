@@ -87,7 +87,6 @@ def calc_mfi(df, period=5):
             positive_mf.append(0)
             negative_mf.append(0)
 
-    # 🔹 None 대신 np.nan 사용
     positive_mf = pd.Series([np.nan] + positive_mf, index=df.index)
     negative_mf = pd.Series([np.nan] + negative_mf, index=df.index)
 
@@ -151,7 +150,6 @@ def get_signal_status_line(inst_id, mfi_period=5, rsi_period=5, threshold=70):
     mfi_line, _, mfi_last, mfi_prev = get_mfi_status_line(inst_id, period=mfi_period, mfi_threshold=threshold, return_raw=True)
     rsi_line, _, rsi_last, rsi_prev = get_rsi_status_line(inst_id, period=rsi_period, threshold=threshold, return_raw=True)
 
-    # 🔹 NaN / None 체크
     if (mfi_last is None or mfi_prev is None or
         rsi_last is None or rsi_prev is None or
         pd.isna(mfi_last) or pd.isna(mfi_prev) or
@@ -175,6 +173,20 @@ def get_signal_status_line(inst_id, mfi_period=5, rsi_period=5, threshold=70):
         return f"{mfi_line}\n{rsi_line}\n{extra_msg}", True
 
     return f"{mfi_line}\n{rsi_line}", False
+
+
+# 🔹 일봉 MFI 계산
+def get_daily_mfi(inst_id, period=5):
+    df_1d = get_ohlcv_okx(inst_id, bar="1D", limit=100)
+    if df_1d is None or len(df_1d) < period:
+        return None
+    try:
+        mfi_series = calc_mfi(df_1d, period)
+        last = mfi_series.iloc[-1]
+        return last if pd.notna(last) else None
+    except Exception as e:
+        logging.error(f"{inst_id} 일봉 MFI 계산 오류: {e}")
+        return None
 
 
 # 🔹 1시간 거래대금 계산
@@ -243,11 +255,11 @@ def get_all_okx_swap_symbols():
     return [item["instId"] for item in data if "USDT" in item["instId"]]
 
 
-# 🔹 텔레그램 메시지 전송
+# 🔹 텔레그램 메시지 전송 (조건에 일봉 MFI 70 이상 추가)
 def send_top_volume_message(top_ids, volume_map):
     global sent_signal_coins
     message_lines = [
-        "⚡  1H MFI/RSI(5) 70 돌파 코인",
+        "⚡  1H MFI/RSI(5) 70 돌파 + 1D MFI(5) ≥ 70",
         "━━━━━━━━━━━━━━━━━━━",
     ]
 
@@ -258,12 +270,19 @@ def send_top_volume_message(top_ids, volume_map):
         signal_status_line, signal_flag = get_signal_status_line(inst_id, mfi_period=5, rsi_period=5, threshold=70)
         if not signal_flag:
             continue
+
+        # ✅ 일봉 MFI 필터 추가
+        daily_mfi = get_daily_mfi(inst_id, period=5)
+        if daily_mfi is None or daily_mfi < 70:
+            continue
+
         daily_change = calculate_daily_change(inst_id)
         if daily_change is None or daily_change <= 0:
             continue
+
         volume_1h = volume_map.get(inst_id, 0)
         actual_rank = rank_map.get(inst_id, "🚫")
-        current_signal_coins.append((inst_id, signal_status_line, daily_change, volume_1h, actual_rank))
+        current_signal_coins.append((inst_id, signal_status_line, daily_change, volume_1h, actual_rank, daily_mfi))
 
     if current_signal_coins:
         new_coins = [c[0] for c in current_signal_coins if c[0] not in sent_signal_coins]
@@ -290,11 +309,11 @@ def send_top_volume_message(top_ids, volume_map):
         all_coins_to_send = [c for c in current_signal_coins if c[0] in sent_signal_coins]
         all_coins_to_send.sort(key=lambda x: x[3], reverse=True)
 
-        for rank, (inst_id, signal_line, daily_change, volume_1h, actual_rank) in enumerate(all_coins_to_send, start=1):
+        for rank, (inst_id, signal_line, daily_change, volume_1h, actual_rank, daily_mfi) in enumerate(all_coins_to_send, start=1):
             name = inst_id.replace("-USDT-SWAP", "")
             volume_str = format_volume_in_eok(volume_1h) or "🚫"
             message_lines.append(
-                f"{rank}. {name} {format_change_with_emoji(daily_change)} / 거래대금: ({volume_str}) {actual_rank}위"
+                f"{rank}. {name} {format_change_with_emoji(daily_change)} / 거래대금: ({volume_str}) {actual_rank}위 / 1D MFI={daily_mfi:.2f}"
             )
             message_lines.append(signal_line)
             message_lines.append("━━━━━━━━━━━━━━━━━━━")
