@@ -111,8 +111,8 @@ def calc_rsi(df, period=5):
     return rsi
 
 
-# 🔹 일봉 MFI/RSI 조건 체크 함수
-def check_daily_mfi_rsi(inst_id, period=5, threshold=70):
+# 🔹 일봉 MFI/RSI 조건 체크 함수 (3일선 적용)
+def check_daily_mfi_rsi(inst_id, period=3, threshold=70):
     df_1d = get_ohlcv_okx(inst_id, bar="1D", limit=100)
     if df_1d is None or len(df_1d) < period:
         return False
@@ -193,7 +193,7 @@ def get_all_okx_swap_symbols():
 def send_top_volume_message(top_ids, volume_map):
     global sent_signal_coins
     message_lines = [
-        "⚡  일봉 5일선 MFI/RSI≥70 필터",
+        "⚡  일봉 3일선 MFI/RSI≥70 필터",
         "━━━━━━━━━━━━━━━━━━━",
     ]
 
@@ -201,8 +201,7 @@ def send_top_volume_message(top_ids, volume_map):
     current_signal_coins = []
 
     for inst_id in top_ids:
-        # 🔹 일봉 5일선 MFI & RSI ≥ 70 조건만 체크
-        if not check_daily_mfi_rsi(inst_id, period=5, threshold=70):
+        if not check_daily_mfi_rsi(inst_id, period=3, threshold=70):
             continue
 
         daily_change = calculate_daily_change(inst_id)
