@@ -180,11 +180,11 @@ def get_all_okx_swap_symbols():
     return [item["instId"] for item in data if "USDT" in item["instId"]]
 
 
-# 🔹 텔레그램 메시지 전송 (일봉 MFI ≥ 70 리스트)
+# 🔹 텔레그램 메시지 전송 (신규 리스트만 전송)
 def send_top_volume_message(top_ids, volume_map):
     global sent_signal_coins
     message_lines = [
-        "⚡  1D MFI(5) ≥ 70 리스트",
+        "⚡  1D MFI(5) ≥ 70 리스트 (신규 코인만 전송)",
         "━━━━━━━━━━━━━━━━━━━",
     ]
 
@@ -192,9 +192,12 @@ def send_top_volume_message(top_ids, volume_map):
     current_signal_coins = []
 
     for inst_id in top_ids:
-        # 1D MFI 필터만 적용
         mfi_line_1d, filter_ok, mfi_last, _ = get_mfi_status_line(inst_id, period=5, mfi_threshold=70, return_raw=True)
         if not filter_ok:
+            continue
+
+        # 이미 전송한 코인 제외
+        if inst_id in sent_signal_coins:
             continue
 
         daily_change = calculate_daily_change(inst_id)
@@ -206,7 +209,11 @@ def send_top_volume_message(top_ids, volume_map):
         current_signal_coins.append((inst_id, mfi_line_1d, daily_change, volume_1h, actual_rank))
 
     if current_signal_coins:
-        current_signal_coins.sort(key=lambda x: x[3], reverse=True)  # 거래대금 순
+        # 새로 전송할 코인 업데이트
+        for c in current_signal_coins:
+            sent_signal_coins.add(c[0])
+
+        current_signal_coins.sort(key=lambda x: x[3], reverse=True)
 
         for rank, (inst_id, mfi_line, daily_change, volume_1h, actual_rank) in enumerate(current_signal_coins, start=1):
             name = inst_id.replace("-USDT-SWAP", "")
@@ -220,7 +227,7 @@ def send_top_volume_message(top_ids, volume_map):
         full_message = "\n".join(message_lines)
         send_telegram_message(full_message)
     else:
-        logging.info("⚡ 일봉 MFI 70 이상 코인 없음 → 메시지 전송 안 함")
+        logging.info("⚡ 신규 조건 만족 코인 없음 → 메시지 전송 안 함")
 
 
 def main():
