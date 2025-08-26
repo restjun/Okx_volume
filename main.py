@@ -70,7 +70,7 @@ def get_ohlcv_okx(instId, bar='1H', limit=200):
 
 
 # 🔹 MFI 계산 함수
-def calc_mfi(df, period=5):
+def calc_mfi(df, period=3):
     tp = (df['h'] + df['l'] + df['c']) / 3
     rmf = tp * df['vol']
 
@@ -98,7 +98,7 @@ def calc_mfi(df, period=5):
 
 
 # 🔹 RSI 계산 함수
-def calc_rsi(df, period=5):
+def calc_rsi(df, period=3):
     delta = df['c'].diff()
     gain = delta.where(delta > 0, 0.0)
     loss = -delta.where(delta < 0, 0.0)
@@ -124,7 +124,7 @@ def check_daily_mfi_rsi(inst_id, period=3, threshold=70):
 
 
 # 🔹 MFI 상태 라인
-def get_mfi_status_line(inst_id, period=5, mfi_threshold=70, return_raw=False):
+def get_mfi_status_line(inst_id, period=3, mfi_threshold=70, return_raw=False):
     df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=100)
     if df_1h is None or len(df_1h) < period:
         return ("[1H MFI] ❌", False) if not return_raw else ("[1H MFI] ❌", False, None, None)
@@ -141,7 +141,7 @@ def get_mfi_status_line(inst_id, period=5, mfi_threshold=70, return_raw=False):
 
 
 # 🔹 RSI 상태 라인
-def get_rsi_status_line(inst_id, period=5, threshold=70, return_raw=False):
+def get_rsi_status_line(inst_id, period=3, threshold=70, return_raw=False):
     df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=100)
     if df_1h is None or len(df_1h) < period:
         return ("[1H RSI] ❌", False) if not return_raw else ("[1H RSI] ❌", False, None, None)
@@ -158,7 +158,7 @@ def get_rsi_status_line(inst_id, period=5, threshold=70, return_raw=False):
 
 
 # 🔹 통합 조건 함수 (1H 기준, RSI/MFI 둘 중 하나라도 70 이상 시 발동)
-def get_signal_status_line(inst_id, mfi_period=5, rsi_period=5, threshold=70):
+def get_signal_status_line(inst_id, mfi_period=3, rsi_period=3, threshold=70):
     mfi_line, _, mfi_last, mfi_prev = get_mfi_status_line(inst_id, period=mfi_period, mfi_threshold=threshold, return_raw=True)
     rsi_line, _, rsi_last, rsi_prev = get_rsi_status_line(inst_id, period=rsi_period, threshold=threshold, return_raw=True)
 
