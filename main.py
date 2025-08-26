@@ -135,6 +135,18 @@ def check_4h_mfi_rsi(inst_id, period=3, threshold=70):
     return mfi_val >= threshold and rsi_val >= threshold
 
 
+# 🔹 1시간 MFI/RSI 조건 체크 함수 (3개 봉 기준)
+def check_1h_mfi_rsi(inst_id, period=3, threshold=70):
+    df_1h = get_ohlcv_okx(inst_id, bar="1H", limit=100)
+    if df_1h is None or len(df_1h) < period:
+        return False
+    mfi_val = calc_mfi(df_1h, period).iloc[-1]
+    rsi_val = calc_rsi(df_1h, period).iloc[-1]
+    if pd.isna(mfi_val) or pd.isna(rsi_val):
+        return False
+    return mfi_val >= threshold and rsi_val >= threshold
+
+
 # 🔹 상승률 계산
 def calculate_daily_change(inst_id):
     df = get_ohlcv_okx(inst_id, bar="1H", limit=48)
@@ -201,11 +213,11 @@ def get_24h_volume(inst_id):
     return df['volCcyQuote'].sum()
 
 
-# 🔹 텔레그램 메시지 전송 (일봉 + 4H 조건 동시 만족)
+# 🔹 텔레그램 메시지 전송 (일봉 + 4H + 1H 조건 동시 만족)
 def send_top_volume_message(top_ids, volume_map):
     global sent_signal_coins
     message_lines = [
-        "⚡ 일봉/4시간 3봉 MFI/RSI ≥ 70 필터",
+        "⚡ 일봉/4시간/1시간 3봉 MFI/RSI ≥ 70 필터",
         "━━━━━━━━━━━━━━━━━━━",
     ]
 
@@ -213,9 +225,10 @@ def send_top_volume_message(top_ids, volume_map):
     current_signal_coins = []
 
     for inst_id in top_ids:
-        # 🔹 조건: 일봉 MFI & RSI ≥70 + 4H MFI & RSI ≥70
+        # 🔹 조건: 일봉 + 4H + 1H 모두 만족
         if not (check_daily_mfi_rsi(inst_id, period=3, threshold=70) and 
-                check_4h_mfi_rsi(inst_id, period=3, threshold=70)):
+                check_4h_mfi_rsi(inst_id, period=3, threshold=70) and
+                check_1h_mfi_rsi(inst_id, period=3, threshold=70)):
             continue
 
         daily_change = calculate_daily_change(inst_id)
