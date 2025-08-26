@@ -47,7 +47,7 @@ def retry_request(func, *args, **kwargs):
     return None
 
 
-def get_ohlcv_okx(instId, bar='1D', limit=200):
+def get_ohlcv_okx(instId, bar='1H', limit=200):
     url = f"https://www.okx.com/api/v5/market/candles?instId={instId}&bar={bar}&limit={limit}"
     response = retry_request(requests.get, url)
     if response is None:
@@ -111,13 +111,13 @@ def calc_rsi(df, period=5):
     return rsi
 
 
-# 🔹 일봉 MFI/RSI 조건 체크 함수
-def check_daily_mfi_rsi(inst_id, period=5, threshold=70):
-    df_1d = get_ohlcv_okx(inst_id, bar="1D", limit=100)
-    if df_1d is None or len(df_1d) < period:
+# 🔹 1시간 MFI/RSI 조건 체크 함수
+def check_1h_mfi_rsi(inst_id, period=5, threshold=70):
+    df_1h = get_ohlcv_okx(inst_id, bar="1H", limit=100)
+    if df_1h is None or len(df_1h) < period:
         return False
-    mfi_val = calc_mfi(df_1d, period).iloc[-1]
-    rsi_val = calc_rsi(df_1d, period).iloc[-1]
+    mfi_val = calc_mfi(df_1h, period).iloc[-1]
+    rsi_val = calc_rsi(df_1h, period).iloc[-1]
     if pd.isna(mfi_val) or pd.isna(rsi_val):
         return False
     return mfi_val >= threshold and rsi_val >= threshold
@@ -125,14 +125,14 @@ def check_daily_mfi_rsi(inst_id, period=5, threshold=70):
 
 # 🔹 MFI 상태 라인 (표시용)
 def get_mfi_status_line(inst_id, period=5, mfi_threshold=70, return_raw=False):
-    df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=100)
-    if df_1d is None or len(df_1d) < period:
-        return ("[1D MFI] ❌", False) if not return_raw else ("[1D MFI] ❌", False, None, None)
+    df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=100)
+    if df_1h is None or len(df_1h) < period:
+        return ("[1H MFI] ❌", False) if not return_raw else ("[1H MFI] ❌", False, None, None)
     
-    mfi_series = calc_mfi(df_1d, period)
+    mfi_series = calc_mfi(df_1h, period)
     last = mfi_series.iloc[-1]
 
-    line = f"[1D MFI] {last:.2f}" if pd.notna(last) else "[1D MFI] ❌"
+    line = f"[1H MFI] {last:.2f}" if pd.notna(last) else "[1H MFI] ❌"
 
     if return_raw:
         return line, False, last, None
@@ -141,21 +141,21 @@ def get_mfi_status_line(inst_id, period=5, mfi_threshold=70, return_raw=False):
 
 # 🔹 RSI 상태 라인 (표시용)
 def get_rsi_status_line(inst_id, period=5, threshold=70, return_raw=False):
-    df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=100)
-    if df_1d is None or len(df_1d) < period:
-        return ("[1D RSI] ❌", False) if not return_raw else ("[1D RSI] ❌", False, None, None)
+    df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=100)
+    if df_1h is None or len(df_1h) < period:
+        return ("[1H RSI] ❌", False) if not return_raw else ("[1H RSI] ❌", False, None, None)
     
-    rsi_series = calc_rsi(df_1d, period)
+    rsi_series = calc_rsi(df_1h, period)
     last = rsi_series.iloc[-1]
 
-    line = f"[1D RSI] {last:.2f}" if pd.notna(last) else "[1D RSI] ❌"
+    line = f"[1H RSI] {last:.2f}" if pd.notna(last) else "[1H RSI] ❌"
 
     if return_raw:
         return line, False, last, None
     return line, False
 
 
-# 🔹 통합 조건 함수 (1H 조건 제거 → 일봉 표시만)
+# 🔹 통합 상태 라인
 def get_signal_status_line(inst_id, mfi_period=5, rsi_period=5, threshold=70):
     mfi_line, _, _, _ = get_mfi_status_line(inst_id, period=mfi_period, mfi_threshold=threshold, return_raw=True)
     rsi_line, _, _, _ = get_rsi_status_line(inst_id, period=rsi_period, threshold=threshold, return_raw=True)
@@ -228,11 +228,11 @@ def get_all_okx_swap_symbols():
     return [item["instId"] for item in data if "USDT" in item["instId"]]
 
 
-# 🔹 텔레그램 메시지 전송 (일봉 조건만 체크)
+# 🔹 텔레그램 메시지 전송 (1H 조건만 체크)
 def send_top_volume_message(top_ids, volume_map):
     global sent_signal_coins
     message_lines = [
-        "⚡  일봉 MFI/RSI(5) ≥ 70 조건 필터",
+        "⚡  1시간 MFI/RSI(5) ≥ 70 조건 필터",
         "━━━━━━━━━━━━━━━━━━━",
     ]
 
@@ -242,8 +242,8 @@ def send_top_volume_message(top_ids, volume_map):
     for inst_id in top_ids:
         signal_status_line, _ = get_signal_status_line(inst_id, mfi_period=5, rsi_period=5, threshold=70)
 
-        # 🔹 일봉 조건만 체크
-        if not check_daily_mfi_rsi(inst_id, period=5, threshold=70):
+        # 🔹 1H 조건만 체크
+        if not check_1h_mfi_rsi(inst_id, period=5, threshold=70):
             continue
 
         daily_change = calculate_daily_change(inst_id)
