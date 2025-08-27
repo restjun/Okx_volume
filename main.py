@@ -104,18 +104,6 @@ def calc_rsi(df, period=3):
     return rsi
 
 
-# 🔹 일봉 조건 체크
-def check_mfi_rsi(inst_id, bar='1D', period=3, threshold=70):
-    df = get_ohlcv_okx(inst_id, bar=bar, limit=100)
-    if df is None or len(df) < period:
-        return False
-    mfi_val = calc_mfi(df, period).iloc[-1]
-    rsi_val = calc_rsi(df, period).iloc[-1]
-    if pd.isna(mfi_val) or pd.isna(rsi_val):
-        return False
-    return mfi_val >= threshold and rsi_val >= threshold
-
-
 # 🔹 4H MFI & RSI 동시 돌파 체크
 def check_4h_mfi_rsi_cross(inst_id, period=3, threshold=70):
     df = get_ohlcv_okx(inst_id, bar='4H', limit=100)
@@ -197,7 +185,7 @@ def get_24h_volume(inst_id):
 def send_top_volume_message(top_ids, volume_map):
     global sent_signal_coins
     message_lines = [
-        "⚡ 일봉 + 4H MFI·RSI 동시 돌파 필터",
+        "⚡ 4H MFI·RSI 동시 돌파 필터",
         "━━━━━━━━━━━━━━━━━━━",
     ]
 
@@ -205,10 +193,8 @@ def send_top_volume_message(top_ids, volume_map):
     current_signal_coins = []
 
     for inst_id in top_ids:
-        if not (
-            check_mfi_rsi(inst_id, bar='1D') and
-            check_4h_mfi_rsi_cross(inst_id)
-        ):
+        # ✅ 일봉 조건 제거 → 4H 조건만 체크
+        if not check_4h_mfi_rsi_cross(inst_id):
             continue
 
         daily_change = calculate_daily_change(inst_id)
