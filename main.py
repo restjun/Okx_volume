@@ -174,7 +174,7 @@ def get_24h_volume(inst_id):
 def send_top_volume_message(top_ids, volume_map):
     global sent_signal_coins
     message_lines = [
-        "⚡ 4H MFI·RSI 돌파 + 일봉 MFI·RSI 3일선 ≥ 70 필터",
+        "⚡ 4H + 일봉 MFI·RSI 3일선 ≥ 70 필터",
         "━━━━━━━━━━━━━━━━━━━",
     ]
 
