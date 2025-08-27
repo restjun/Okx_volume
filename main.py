@@ -174,19 +174,30 @@ def get_24h_volume(inst_id):
 def send_top_volume_message(top_ids, volume_map):
     global sent_signal_coins
     message_lines = [
-        "⚡ 4H MFI·RSI 동시 돌파 필터 (재돌파 감지)",
+        "⚡ 4H MFI·RSI 돌파 + 일봉 MFI·RSI 3일선 ≥ 70 필터",
         "━━━━━━━━━━━━━━━━━━━",
     ]
 
-    rank_map = {inst_id: rank + 1 for rank, inst_id in enumerate(top_ids)}  
-    current_signal_coins = []  
+    rank_map = {inst_id: rank + 1 for rank, inst_id in enumerate(top_ids)}
+    current_signal_coins = []
 
     for inst_id in top_ids:
         is_cross = check_4h_mfi_rsi_cross(inst_id)
         last_status = sent_signal_coins.get(inst_id, False)
 
-        # 돌파 실패 후 재돌파만 전송
+        # 4H 돌파 실패 → 재돌파만 처리
         if not last_status and is_cross:
+            # ✅ 일봉 MFI·RSI 3일선 ≥ 70 체크
+            df_daily = get_ohlcv_okx(inst_id, bar="1D", limit=100)
+            if df_daily is None or len(df_daily) < 3:
+                sent_signal_coins[inst_id] = is_cross
+                continue
+            daily_mfi = calc_mfi(df_daily, period=3).iloc[-1]
+            daily_rsi = calc_rsi(df_daily, period=3).iloc[-1]
+            if pd.isna(daily_mfi) or pd.isna(daily_rsi) or daily_mfi < 70 or daily_rsi < 70:
+                sent_signal_coins[inst_id] = is_cross
+                continue
+
             daily_change = calculate_daily_change(inst_id)
             if daily_change is None or daily_change <= 0:
                 sent_signal_coins[inst_id] = is_cross
@@ -219,6 +230,20 @@ def send_top_volume_message(top_ids, volume_map):
             )
         message_lines.append("━━━━━━━━━━━━━━━━━━━")
 
+        # 거래대금 기준 TOP10 정렬
+        all_coins_to_send = current_signal_coins[:]
+        all_coins_to_send.sort(key=lambda x: x[2], reverse=True)
+        all_coins_to_send = all_coins_to_send[:10]
+
+        message_lines.append("📊 전체 조건 만족 코인 TOP 10")
+        for rank, (inst_id, daily_change, volume_24h, actual_rank) in enumerate(all_coins_to_send, start=1):
+            name = inst_id.replace("-USDT-SWAP", "")
+            volume_str = format_volume_in_eok(volume_24h) or "🚫"
+            message_lines.append(
+                f"{rank}. {name} {format_change_with_emoji(daily_change)} / 거래대금: ({volume_str}) {actual_rank}위"
+            )
+        message_lines.append("━━━━━━━━━━━━━━━━━━━")
+
         full_message = "\n".join(message_lines)
         send_telegram_message(full_message)
     else:
@@ -229,12 +254,12 @@ def main():
     all_ids = get_all_okx_swap_symbols()
     volume_map = {}
 
-    for inst_id in all_ids:  
-        vol_24h = get_24h_volume(inst_id)  
-        volume_map[inst_id] = vol_24h  
-        time.sleep(0.05)  
+    for inst_id in all_ids:
+        vol_24h = get_24h_volume(inst_id)
+        volume_map[inst_id] = vol_24h
+        time.sleep(0.05)
 
-    top_ids = sorted(volume_map, key=volume_map.get, reverse=True)[:100]  
+    top_ids = sorted(volume_map, key=volume_map.get, reverse=True)[:100]
     send_top_volume_message(top_ids, volume_map)
 
 def run_scheduler():
