@@ -20,7 +20,6 @@ logging.basicConfig(level=logging.INFO)
 # 🔹 전역 변수: 이미 메시지 전송한 코인 저장
 sent_signal_coins = set()
 
-
 def send_telegram_message(message):
     for retry_count in range(1, 11):
         try:
@@ -31,7 +30,6 @@ def send_telegram_message(message):
             logging.error(f"텔레그램 메시지 전송 실패 (재시도 {retry_count}/10): {e}")
             time.sleep(5)
     logging.error("텔레그램 메시지 전송 실패: 최대 재시도 초과")
-
 
 def retry_request(func, *args, **kwargs):
     for attempt in range(10):
@@ -45,7 +43,6 @@ def retry_request(func, *args, **kwargs):
             logging.error(f"API 호출 실패 (재시도 {attempt+1}/10): {e}")
             time.sleep(5)
     return None
-
 
 def get_ohlcv_okx(instId, bar='1H', limit=200):
     url = f"https://www.okx.com/api/v5/market/candles?instId={instId}&bar={bar}&limit={limit}"
@@ -66,7 +63,6 @@ def get_ohlcv_okx(instId, bar='1H', limit=200):
     except Exception as e:
         logging.error(f"{instId} OHLCV 파싱 실패: {e}")
         return None
-
 
 # 🔹 MFI 계산
 def calc_mfi(df, period=3):
@@ -91,7 +87,6 @@ def calc_mfi(df, period=3):
     mfi = 100 * (pos_mf_sum / (pos_mf_sum + neg_mf_sum))
     return mfi
 
-
 # 🔹 RSI 계산
 def calc_rsi(df, period=3):
     delta = df['c'].diff()
@@ -102,7 +97,6 @@ def calc_rsi(df, period=3):
     rs = avg_gain / avg_loss
     rsi = 100 - (100 / (1 + rs))
     return rsi
-
 
 # 🔹 4H MFI & RSI 동시 돌파 체크
 def check_4h_mfi_rsi_cross(inst_id, period=3, threshold=70):
@@ -116,7 +110,6 @@ def check_4h_mfi_rsi_cross(inst_id, period=3, threshold=70):
     if pd.isna(curr_mfi) or pd.isna(curr_rsi):
         return False
     return (curr_mfi >= threshold and curr_rsi >= threshold and (prev_mfi < threshold or prev_rsi < threshold))
-
 
 # 🔹 상승률 계산
 def calculate_daily_change(inst_id):
@@ -143,14 +136,12 @@ def calculate_daily_change(inst_id):
         logging.error(f"{inst_id} 상승률 계산 오류: {e}")
         return None
 
-
 def format_volume_in_eok(volume):
     try:
         eok = int(volume // 1_000_000)
         return str(eok) if eok >= 1 else None
     except:
         return None
-
 
 def format_change_with_emoji(change):
     if change is None:
@@ -162,7 +153,6 @@ def format_change_with_emoji(change):
     else:
         return f"🔴 ({change:.2f}%)"
 
-
 # 🔹 OKX USDT-SWAP 심볼 가져오기
 def get_all_okx_swap_symbols():
     url = "https://www.okx.com/api/v5/public/instruments?instType=SWAP"
@@ -172,14 +162,12 @@ def get_all_okx_swap_symbols():
     data = response.json().get("data", [])
     return [item["instId"] for item in data if "USDT" in item["instId"]]
 
-
 # 🔹 24시간 거래대금 계산
 def get_24h_volume(inst_id):
     df = get_ohlcv_okx(inst_id, bar="1H", limit=24)
     if df is None or len(df) < 24:
         return 0
     return df['volCcyQuote'].sum()
-
 
 # 🔹 텔레그램 메시지 전송
 def send_top_volume_message(top_ids, volume_map):
@@ -189,93 +177,89 @@ def send_top_volume_message(top_ids, volume_map):
         "━━━━━━━━━━━━━━━━━━━",
     ]
 
-    rank_map = {inst_id: rank + 1 for rank, inst_id in enumerate(top_ids)}
-    current_signal_coins = []
+    rank_map = {inst_id: rank + 1 for rank, inst_id in enumerate(top_ids)}  
+    current_signal_coins = []  
 
-    for inst_id in top_ids:
-        # ✅ 일봉 조건 제거 → 4H 조건만 체크
-        if not check_4h_mfi_rsi_cross(inst_id):
-            continue
+    for inst_id in top_ids:  
+        # ✅ 일봉 조건 삭제, 4H 조건만 체크
+        if not check_4h_mfi_rsi_cross(inst_id):  
+            continue  
 
-        daily_change = calculate_daily_change(inst_id)
-        if daily_change is None or daily_change <= 0:
-            continue
+        daily_change = calculate_daily_change(inst_id)  
+        if daily_change is None or daily_change <= 0:  
+            continue  
 
-        volume_24h = volume_map.get(inst_id, 0)
-        actual_rank = rank_map.get(inst_id, "🚫")
-        current_signal_coins.append((inst_id, daily_change, volume_24h, actual_rank))
+        volume_24h = volume_map.get(inst_id, 0)  
+        actual_rank = rank_map.get(inst_id, "🚫")  
+        current_signal_coins.append((inst_id, daily_change, volume_24h, actual_rank))  
 
-    if current_signal_coins:
-        new_coins = [c for c in current_signal_coins if c[0] not in sent_signal_coins]
-        if not new_coins:
-            logging.info("⚡ 신규 조건 코인 없음 → 메시지 전송 안 함")
-            return
-        sent_signal_coins.update([c[0] for c in new_coins])
+    if current_signal_coins:  
+        new_coins = [c for c in current_signal_coins if c[0] not in sent_signal_coins]  
+        if not new_coins:  
+            logging.info("⚡ 신규 조건 코인 없음 → 메시지 전송 안 함")  
+            return  
+        sent_signal_coins.update([c[0] for c in new_coins])  
 
-        btc_id = "BTC-USDT-SWAP"
-        btc_change = calculate_daily_change(btc_id)
-        btc_volume = volume_map.get(btc_id, 0)
-        btc_volume_str = format_volume_in_eok(btc_volume) or "🚫"
+        btc_id = "BTC-USDT-SWAP"  
+        btc_change = calculate_daily_change(btc_id)  
+        btc_volume = volume_map.get(btc_id, 0)  
+        btc_volume_str = format_volume_in_eok(btc_volume) or "🚫"  
 
-        message_lines += [
-            "📌 BTC 현황",
-            f"BTC {format_change_with_emoji(btc_change)} / 거래대금: ({btc_volume_str})",
-            "━━━━━━━━━━━━━━━━━━━"
-        ]
+        message_lines += [  
+            "📌 BTC 현황",  
+            f"BTC {format_change_with_emoji(btc_change)} / 거래대금: ({btc_volume_str})",  
+            "━━━━━━━━━━━━━━━━━━━"  
+        ]  
 
-        message_lines.append("🆕 신규 진입 코인")
-        for inst_id, daily_change, volume_24h, actual_rank in new_coins:
-            name = inst_id.replace("-USDT-SWAP", "")
-            volume_str = format_volume_in_eok(volume_24h) or "🚫"
-            message_lines.append(
-                f"{name} {format_change_with_emoji(daily_change)} / 거래대금: ({volume_str}) {actual_rank}위"
-            )
-        message_lines.append("━━━━━━━━━━━━━━━━━━━")
+        message_lines.append("🆕 신규 진입 코인")  
+        for inst_id, daily_change, volume_24h, actual_rank in new_coins:  
+            name = inst_id.replace("-USDT-SWAP", "")  
+            volume_str = format_volume_in_eok(volume_24h) or "🚫"  
+            message_lines.append(  
+                f"{name} {format_change_with_emoji(daily_change)} / 거래대금: ({volume_str}) {actual_rank}위"  
+            )  
+        message_lines.append("━━━━━━━━━━━━━━━━━━━")  
 
-        all_coins_to_send = current_signal_coins[:]
-        all_coins_to_send.sort(key=lambda x: x[2], reverse=True)
-        all_coins_to_send = all_coins_to_send[:10]
+        all_coins_to_send = current_signal_coins[:]  
+        all_coins_to_send.sort(key=lambda x: x[2], reverse=True)  
+        all_coins_to_send = all_coins_to_send[:10]  
 
-        message_lines.append("📊 전체 조건 만족 코인 TOP 10")
-        for rank, (inst_id, daily_change, volume_24h, actual_rank) in enumerate(all_coins_to_send, start=1):
-            name = inst_id.replace("-USDT-SWAP", "")
-            volume_str = format_volume_in_eok(volume_24h) or "🚫"
-            message_lines.append(
-                f"{rank}. {name} {format_change_with_emoji(daily_change)} / 거래대금: ({volume_str}) {actual_rank}위"
-            )
-        message_lines.append("━━━━━━━━━━━━━━━━━━━")
+        message_lines.append("📊 전체 조건 만족 코인 TOP 10")  
+        for rank, (inst_id, daily_change, volume_24h, actual_rank) in enumerate(all_coins_to_send, start=1):  
+            name = inst_id.replace("-USDT-SWAP", "")  
+            volume_str = format_volume_in_eok(volume_24h) or "🚫"  
+            message_lines.append(  
+                f"{rank}. {name} {format_change_with_emoji(daily_change)} / 거래대금: ({volume_str}) {actual_rank}위"  
+            )  
+        message_lines.append("━━━━━━━━━━━━━━━━━━━")  
 
-        full_message = "\n".join(message_lines)
-        send_telegram_message(full_message)
-    else:
+        full_message = "\n".join(message_lines)  
+        send_telegram_message(full_message)  
+    else:  
         logging.info("⚡ 조건 만족 코인 없음 → 메시지 전송 안 함")
-
 
 def main():
     logging.info("📥 거래대금 분석 시작")
     all_ids = get_all_okx_swap_symbols()
     volume_map = {}
 
-    for inst_id in all_ids:
-        vol_24h = get_24h_volume(inst_id)
-        volume_map[inst_id] = vol_24h
-        time.sleep(0.05)
+    for inst_id in all_ids:  
+        vol_24h = get_24h_volume(inst_id)  
+        volume_map[inst_id] = vol_24h  
+        time.sleep(0.05)  
 
-    top_ids = sorted(volume_map, key=volume_map.get, reverse=True)[:100]
+    top_ids = sorted(volume_map, key=volume_map.get, reverse=True)[:100]  
     send_top_volume_message(top_ids, volume_map)
-
 
 def run_scheduler():
     while True:
         schedule.run_pending()
         time.sleep(1)
 
-
 @app.on_event("startup")
 def start_scheduler():
     schedule.every(1).minutes.do(main)
     threading.Thread(target=run_scheduler, daemon=True).start()
-
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
