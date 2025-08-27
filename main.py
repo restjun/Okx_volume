@@ -104,7 +104,7 @@ def calc_rsi(df, period=3):
     return rsi
 
 
-# 🔹 타임프레임별 MFI/RSI 조건 체크
+# 🔹 일봉 조건 체크
 def check_mfi_rsi(inst_id, bar='1D', period=3, threshold=70):
     df = get_ohlcv_okx(inst_id, bar=bar, limit=100)
     if df is None or len(df) < period:
@@ -114,6 +114,20 @@ def check_mfi_rsi(inst_id, bar='1D', period=3, threshold=70):
     if pd.isna(mfi_val) or pd.isna(rsi_val):
         return False
     return mfi_val >= threshold and rsi_val >= threshold
+
+
+# 🔹 4H MFI & RSI 동시 돌파 체크
+def check_4h_mfi_rsi_cross(inst_id, period=3, threshold=70):
+    df = get_ohlcv_okx(inst_id, bar='4H', limit=100)
+    if df is None or len(df) < period + 1:
+        return False
+    mfi = calc_mfi(df, period)
+    rsi = calc_rsi(df, period)
+    prev_mfi, curr_mfi = mfi.iloc[-2], mfi.iloc[-1]
+    prev_rsi, curr_rsi = rsi.iloc[-2], rsi.iloc[-1]
+    if pd.isna(curr_mfi) or pd.isna(curr_rsi):
+        return False
+    return (curr_mfi >= threshold and curr_rsi >= threshold and (prev_mfi < threshold or prev_rsi < threshold))
 
 
 # 🔹 상승률 계산
@@ -179,11 +193,11 @@ def get_24h_volume(inst_id):
     return df['volCcyQuote'].sum()
 
 
-# 🔹 텔레그램 메시지 전송 (신규 코인 블록 별도)
+# 🔹 텔레그램 메시지 전송
 def send_top_volume_message(top_ids, volume_map):
     global sent_signal_coins
     message_lines = [
-        "⚡ 일봉/4H/1H 3봉 MFI·RSI ≥ 70 필터",
+        "⚡ 일봉 + 4H MFI·RSI 동시 돌파 필터",
         "━━━━━━━━━━━━━━━━━━━",
     ]
 
@@ -191,11 +205,9 @@ def send_top_volume_message(top_ids, volume_map):
     current_signal_coins = []
 
     for inst_id in top_ids:
-        # 🔹 조건: 일봉 + 4H + 1H 모두 만족
         if not (
             check_mfi_rsi(inst_id, bar='1D') and
-            check_mfi_rsi(inst_id, bar='4H') and
-            check_mfi_rsi(inst_id, bar='1H')
+            check_4h_mfi_rsi_cross(inst_id)
         ):
             continue
 
@@ -208,15 +220,12 @@ def send_top_volume_message(top_ids, volume_map):
         current_signal_coins.append((inst_id, daily_change, volume_24h, actual_rank))
 
     if current_signal_coins:
-        # 신규 코인 확인
         new_coins = [c for c in current_signal_coins if c[0] not in sent_signal_coins]
         if not new_coins:
             logging.info("⚡ 신규 조건 코인 없음 → 메시지 전송 안 함")
             return
-        # 신규 저장
         sent_signal_coins.update([c[0] for c in new_coins])
 
-        # BTC 현황
         btc_id = "BTC-USDT-SWAP"
         btc_change = calculate_daily_change(btc_id)
         btc_volume = volume_map.get(btc_id, 0)
@@ -228,7 +237,6 @@ def send_top_volume_message(top_ids, volume_map):
             "━━━━━━━━━━━━━━━━━━━"
         ]
 
-        # 신규 코인 블록
         message_lines.append("🆕 신규 진입 코인")
         for inst_id, daily_change, volume_24h, actual_rank in new_coins:
             name = inst_id.replace("-USDT-SWAP", "")
@@ -238,7 +246,6 @@ def send_top_volume_message(top_ids, volume_map):
             )
         message_lines.append("━━━━━━━━━━━━━━━━━━━")
 
-        # 전체 TOP 10
         all_coins_to_send = current_signal_coins[:]
         all_coins_to_send.sort(key=lambda x: x[2], reverse=True)
         all_coins_to_send = all_coins_to_send[:10]
