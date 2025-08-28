@@ -157,7 +157,7 @@ def get_all_okx_swap_symbols():
 
 # 🔹 24시간 거래대금
 def get_24h_volume(inst_id):
-    df = get_ohlcv_okx(inst_id, bar="1H", limit=4)
+    df = get_ohlcv_okx(inst_id, bar="1H", limit=24)
     if df is None or len(df) < 24:
         return 0
     return df['volCcyQuote'].sum()
@@ -264,7 +264,7 @@ def main():
         vol_24h = get_24h_volume(inst_id)
         volume_map[inst_id] = vol_24h
         time.sleep(0.05)
-    top_ids = sorted(volume_map, key=volume_map.get, reverse=True)[:100]
+    top_ids = sorted(volume_map, key=volume_map.get, reverse=True)[:10]
     send_top_volume_message(top_ids, volume_map)
 
 def run_scheduler():
