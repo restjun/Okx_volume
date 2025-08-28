@@ -64,8 +64,8 @@ def get_ohlcv_okx(instId, bar='1H', limit=200):
         logging.error(f"{instId} OHLCV 파싱 실패: {e}")
         return None
 
-# 🔹 MFI 계산
-def calc_mfi(df, period=3):
+# 🔹 MFI 계산 (5일선)
+def calc_mfi(df, period=5):
     tp = (df['h'] + df['l'] + df['c']) / 3
     mf = tp * df['vol']
     mf_diff = tp.diff()
@@ -76,8 +76,8 @@ def calc_mfi(df, period=3):
     mfi = 100 * pos_ema / (pos_ema + neg_ema)
     return mfi
 
-# 🔹 RSI 계산
-def calc_rsi(df, period=3):
+# 🔹 RSI 계산 (5일선)
+def calc_rsi(df, period=5):
     delta = df['c'].diff()
     gain = delta.where(delta > 0, 0.0)
     loss = -delta.where(delta < 0, 0.0)
@@ -93,8 +93,8 @@ def format_rsi_mfi(value):
         return "(N/A)"
     return f"🟢 {value:.1f}" if value >= 70 else f"🔴 {value:.1f}"
 
-# 🔹 4H MFI & RSI 동시 돌파 체크
-def check_4h_mfi_rsi_cross(inst_id, period=3, threshold=70):
+# 🔹 4H MFI & RSI 동시 돌파 체크 (5일선)
+def check_4h_mfi_rsi_cross(inst_id, period=5, threshold=70):
     df = get_ohlcv_okx(inst_id, bar='4H', limit=100)
     if df is None or len(df) < period + 1:
         return False
@@ -162,7 +162,7 @@ def get_24h_volume(inst_id):
         return 0
     return df['volCcyQuote'].sum()
 
-# 🔹 신규 진입시만 TOP10 전송 (4H + 일봉 필터 적용)
+# 🔹 신규 진입시만 TOP10 전송 (4H + 일봉 필터 적용, 5일선)
 def send_top_volume_message(top_ids, volume_map):
     global sent_signal_coins
     message_lines = []
@@ -179,10 +179,10 @@ def send_top_volume_message(top_ids, volume_map):
             sent_signal_coins[inst_id] = is_cross
             continue
 
-        daily_mfi = calc_mfi(df_daily, period=3).iloc[-1]
-        daily_rsi = calc_rsi(df_daily, period=3).iloc[-1]
-        h4_mfi = calc_mfi(df_4h, period=3).iloc[-1]
-        h4_rsi = calc_rsi(df_4h, period=3).iloc[-1]
+        daily_mfi = calc_mfi(df_daily, period=5).iloc[-1]
+        daily_rsi = calc_rsi(df_daily, period=5).iloc[-1]
+        h4_mfi = calc_mfi(df_4h, period=5).iloc[-1]
+        h4_rsi = calc_rsi(df_4h, period=5).iloc[-1]
 
         # 🔹 일봉 + 4H MFI·RSI 필터
         if pd.isna(daily_mfi) or pd.isna(daily_rsi) or daily_mfi < 70 or daily_rsi < 70:
@@ -210,7 +210,7 @@ def send_top_volume_message(top_ids, volume_map):
         sent_signal_coins[inst_id] = is_cross
 
     if all_signal_coins or new_entry_coins:
-        message_lines.append("⚡ 4H + 일봉 MFI·RSI 3일선 ≥ 70 필터")
+        message_lines.append("⚡ 4H + 일봉 MFI·RSI 5일선 ≥ 70 필터")
         message_lines.append("━━━━━━━━━━━━━━━━━━━")
 
         # BTC 현황
