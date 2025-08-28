@@ -8,9 +8,6 @@ import uvicorn
 import logging
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-import io
-import base64
 
 app = FastAPI()
 
@@ -164,61 +161,7 @@ def get_24h_volume(inst_id):
         return 0
     return df['volCcyQuote'].sum()
 
-# 🔹 신규 코인 시각화 함수
-def visualize_new_entries(new_coins):
-    if not new_coins:
-        return None
-    
-    names = [inst_id.replace("-USDT-SWAP", "") for inst_id, *_ in new_coins]
-    volumes = [vol for _, _, vol, *_ in new_coins]
-    rsis = [f"{rsi:.1f}" for *_, rsi, _, _, _ in new_coins]
-    mfis = [f"{mfi:.1f}" for *_, mfi, _, _, _, _ in new_coins]
-
-    plt.figure(figsize=(8, 5))
-    plt.bar(names, volumes)
-    plt.xticks(rotation=45, ha="right")
-    plt.ylabel("24H 거래대금")
-    plt.title("🆕 신규 진입 코인 거래대금")
-    
-    # 값 라벨 추가
-    for i, v in enumerate(volumes):
-        plt.text(i, v, f"{rsis[i]}/{mfis[i]}", ha='center', va='bottom', fontsize=8, color="blue")
-
-    buf = io.BytesIO()
-    plt.tight_layout()
-    plt.savefig(buf, format="png")
-    plt.close()
-    buf.seek(0)
-    img_b64 = base64.b64encode(buf.read()).decode("utf-8")
-    return img_b64
-
-# 🔹 신규 진입 코인 메시지 별도 전송
-def send_new_entries_message(new_coins):
-    if not new_coins:
-        return
-    
-    message_lines = [
-        "━━━━━━━━━━━━━━━━━━━",
-        "🆕 신규 진입 코인 (하단 정리)"
-    ]
-    for inst_id, daily_change, volume_24h, actual_rank, daily_mfi, daily_rsi, h4_mfi, h4_rsi in new_coins:
-        name = inst_id.replace("-USDT-SWAP", "")
-        volume_str = format_volume_in_eok(volume_24h) or "🚫"
-        message_lines.append(
-            f"{name} {format_change_with_emoji(daily_change)} / 거래대금:({volume_str}) {actual_rank}위\n"
-            f"📊 일봉 RSI:{daily_rsi:.1f} / MFI:{daily_mfi:.1f}\n"
-            f"📊 4H   RSI:{h4_rsi:.1f} / MFI:{h4_mfi:.1f}"
-        )
-    
-    full_message = "\n".join(message_lines)
-    send_telegram_message(full_message)
-
-    # 그래프 전송
-    img_b64 = visualize_new_entries(new_coins)
-    if img_b64:
-        bot.sendPhoto(telegram_user_id, photo=f"data:image/png;base64,{img_b64}")
-
-# 🔹 텔레그램 메시지 전송 (원본)
+# 🔹 텔레그램 메시지 전송
 def send_top_volume_message(top_ids, volume_map):
     global sent_signal_coins
     message_lines = [
@@ -227,44 +170,45 @@ def send_top_volume_message(top_ids, volume_map):
     ]
 
     rank_map = {inst_id: rank + 1 for rank, inst_id in enumerate(top_ids)}
-    current_signal_coins = []
+    all_signal_coins = []
+    new_entry_coins = []
 
     for inst_id in top_ids:
         is_cross = check_4h_mfi_rsi_cross(inst_id)
+        df_daily = get_ohlcv_okx(inst_id, bar="1D", limit=100)
+        df_4h = get_ohlcv_okx(inst_id, bar="4H", limit=100)
+        if df_daily is None or len(df_daily) < 3 or df_4h is None or len(df_4h) < 3:
+            sent_signal_coins[inst_id] = is_cross
+            continue
+
+        daily_mfi = calc_mfi(df_daily, period=3).iloc[-1]
+        daily_rsi = calc_rsi(df_daily, period=3).iloc[-1]
+        h4_mfi = calc_mfi(df_4h, period=3).iloc[-1]
+        h4_rsi = calc_rsi(df_4h, period=3).iloc[-1]
+
+        if pd.isna(daily_mfi) or pd.isna(daily_rsi) or daily_mfi < 70 or daily_rsi < 70:
+            sent_signal_coins[inst_id] = is_cross
+            continue
+
+        daily_change = calculate_daily_change(inst_id)
+        if daily_change is None or daily_change <= 0:
+            sent_signal_coins[inst_id] = is_cross
+            continue
+
+        volume_24h = volume_map.get(inst_id, 0)
+        actual_rank = rank_map.get(inst_id, "🚫")
+        coin_tuple = (inst_id, daily_change, volume_24h, actual_rank, daily_mfi, daily_rsi, h4_mfi, h4_rsi)
+
+        all_signal_coins.append(coin_tuple)
+
+        # 신규 진입 여부 판단
         last_status = sent_signal_coins.get(inst_id, False)
-
         if not last_status and is_cross:
-            df_daily = get_ohlcv_okx(inst_id, bar="1D", limit=100)
-            df_4h = get_ohlcv_okx(inst_id, bar="4H", limit=100)
-            if df_daily is None or len(df_daily) < 3 or df_4h is None or len(df_4h) < 3:
-                sent_signal_coins[inst_id] = is_cross
-                continue
-
-            # 일봉/4H MFI·RSI
-            daily_mfi = calc_mfi(df_daily, period=3).iloc[-1]
-            daily_rsi = calc_rsi(df_daily, period=3).iloc[-1]
-            h4_mfi = calc_mfi(df_4h, period=3).iloc[-1]
-            h4_rsi = calc_rsi(df_4h, period=3).iloc[-1]
-
-            if pd.isna(daily_mfi) or pd.isna(daily_rsi) or daily_mfi < 70 or daily_rsi < 70:
-                sent_signal_coins[inst_id] = is_cross
-                continue
-
-            daily_change = calculate_daily_change(inst_id)
-            if daily_change is None or daily_change <= 0:
-                sent_signal_coins[inst_id] = is_cross
-                continue
-
-            volume_24h = volume_map.get(inst_id, 0)
-            actual_rank = rank_map.get(inst_id, "🚫")
-            current_signal_coins.append((
-                inst_id, daily_change, volume_24h, actual_rank,
-                daily_mfi, daily_rsi, h4_mfi, h4_rsi
-            ))
+            new_entry_coins.append(coin_tuple)
 
         sent_signal_coins[inst_id] = is_cross
 
-    if current_signal_coins:
+    if all_signal_coins:
         btc_id = "BTC-USDT-SWAP"
         btc_change = calculate_daily_change(btc_id)
         btc_volume = volume_map.get(btc_id, 0)
@@ -276,23 +220,10 @@ def send_top_volume_message(top_ids, volume_map):
             "━━━━━━━━━━━━━━━━━━━"
         ]
 
-        message_lines.append("🆕 신규 진입 코인")
-        for inst_id, daily_change, volume_24h, actual_rank, daily_mfi, daily_rsi, h4_mfi, h4_rsi in current_signal_coins:
-            name = inst_id.replace("-USDT-SWAP", "")
-            volume_str = format_volume_in_eok(volume_24h) or "🚫"
-            message_lines.append(
-                f"{name} {format_change_with_emoji(daily_change)} / 거래대금: ({volume_str}) {actual_rank}위\n"
-                f"📊 일봉 RSI:{daily_rsi:.1f} / MFI:{daily_mfi:.1f}\n"
-                f"📊 4H   RSI:{h4_rsi:.1f} / MFI:{h4_mfi:.1f}"
-            )
-        message_lines.append("━━━━━━━━━━━━━━━━━━━")
-
-        all_coins_to_send = current_signal_coins[:]
-        all_coins_to_send.sort(key=lambda x: x[2], reverse=True)
-        all_coins_to_send = all_coins_to_send[:10]
-
+        # 전체 조건 만족 TOP 10
         message_lines.append("📊 전체 조건 만족 코인 TOP 10")
-        for rank, (inst_id, daily_change, volume_24h, actual_rank, daily_mfi, daily_rsi, h4_mfi, h4_rsi) in enumerate(all_coins_to_send, start=1):
+        all_signal_coins.sort(key=lambda x: x[2], reverse=True)
+        for rank, (inst_id, daily_change, volume_24h, actual_rank, daily_mfi, daily_rsi, h4_mfi, h4_rsi) in enumerate(all_signal_coins[:10], start=1):
             name = inst_id.replace("-USDT-SWAP", "")
             volume_str = format_volume_in_eok(volume_24h) or "🚫"
             message_lines.append(
@@ -300,14 +231,23 @@ def send_top_volume_message(top_ids, volume_map):
                 f"📊 일봉 RSI:{daily_rsi:.1f} / MFI:{daily_mfi:.1f}\n"
                 f"📊 4H   RSI:{h4_rsi:.1f} / MFI:{h4_mfi:.1f}"
             )
-        message_lines.append("━━━━━━━━━━━━━━━━━━━")
 
+        # 신규 진입 코인 하단 표시
+        if new_entry_coins:
+            message_lines.append("━━━━━━━━━━━━━━━━━━━")
+            message_lines.append("🆕 신규 진입 코인")
+            for inst_id, daily_change, volume_24h, actual_rank, daily_mfi, daily_rsi, h4_mfi, h4_rsi in new_entry_coins:
+                name = inst_id.replace("-USDT-SWAP", "")
+                volume_str = format_volume_in_eok(volume_24h) or "🚫"
+                message_lines.append(
+                    f"{name} {format_change_with_emoji(daily_change)} / 거래대금: ({volume_str}) {actual_rank}위\n"
+                    f"📊 일봉 RSI:{daily_rsi:.1f} / MFI:{daily_mfi:.1f}\n"
+                    f"📊 4H   RSI:{h4_rsi:.1f} / MFI:{h4_mfi:.1f}"
+                )
+
+        message_lines.append("━━━━━━━━━━━━━━━━━━━")
         full_message = "\n".join(message_lines)
         send_telegram_message(full_message)
-
-        # 🔹 신규 진입 코인 하단 정리 + 시각화
-        send_new_entries_message(current_signal_coins)
-
     else:
         logging.info("⚡ 조건 만족 코인 없음 → 메시지 전송 안 함")
 
