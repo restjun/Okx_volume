@@ -67,16 +67,11 @@ def get_ohlcv_okx(instId, bar='1H', limit=200):
 def calc_mfi(df, period=3):
     tp = (df['h'] + df['l'] + df['c']) / 3  # Typical Price
     mf = tp * df['vol']                     # Money Flow
-
-    # Money Flow Direction
     mf_diff = tp.diff()
     positive_mf = mf.where(mf_diff > 0, 0.0)
     negative_mf = mf.where(mf_diff < 0, 0.0)
-
-    # EMA 기반 누적합
     pos_ema = positive_mf.ewm(span=period, adjust=False).mean()
     neg_ema = negative_mf.ewm(span=period, adjust=False).mean()
-
     mfi = 100 * pos_ema / (pos_ema + neg_ema)
     return mfi
 
@@ -89,6 +84,14 @@ def calc_rsi(df, period=3):
     rs = avg_gain / avg_loss
     rsi = 100 - (100 / (1 + rs))
     return rsi
+
+def format_rsi_mfi(value):
+    if pd.isna(value):
+        return "(N/A)"
+    if value >= 70:
+        return f"🟢 {value:.1f}"
+    else:
+        return f"🔴 {value:.1f}"
 
 def check_4h_mfi_rsi_cross(inst_id, period=3, threshold=70):
     df = get_ohlcv_okx(inst_id, bar='4H', limit=100)
@@ -218,8 +221,8 @@ def send_top_volume_message(top_ids, volume_map):
             message_lines.append(
                 f"{rank}. {name}\n"
                 f"상승률: {format_change_with_emoji(daily_change)} / 거래대금: ({volume_str}) / {actual_rank}위\n"
-                f"📊 일봉 RSI:{daily_rsi:.1f} / MFI:{daily_mfi:.1f}\n"
-                f"📊 4H   RSI:{h4_rsi:.1f} / MFI:{h4_mfi:.1f}"
+                f"📊 일봉 RSI: {format_rsi_mfi(daily_rsi)} / MFI: {format_rsi_mfi(daily_mfi)}\n"
+                f"📊 4H   RSI: {format_rsi_mfi(h4_rsi)} / MFI: {format_rsi_mfi(h4_mfi)}"
             )
 
         if new_entry_coins:
@@ -231,8 +234,8 @@ def send_top_volume_message(top_ids, volume_map):
                 message_lines.append(
                     f"{name}\n"
                     f"상승률: {format_change_with_emoji(daily_change)} / 거래대금: ({volume_str}) / {actual_rank}위\n"
-                    f"📊 일봉 RSI:{daily_rsi:.1f} / MFI:{daily_mfi:.1f}\n"
-                    f"📊 4H   RSI:{h4_rsi:.1f} / MFI:{h4_mfi:.1f}"
+                    f"📊 일봉 RSI: {format_rsi_mfi(daily_rsi)} / MFI: {format_rsi_mfi(daily_mfi)}\n"
+                    f"📊 4H   RSI: {format_rsi_mfi(h4_rsi)} / MFI: {format_rsi_mfi(h4_mfi)}"
                 )
 
         message_lines.append("━━━━━━━━━━━━━━━━━━━")
@@ -248,7 +251,7 @@ def main():
         vol_24h = get_24h_volume(inst_id)
         volume_map[inst_id] = vol_24h
         time.sleep(0.05)
-    top_ids = sorted(volume_map, key=volume_map.get, reverse=True)[:20]
+    top_ids = sorted(volume_map, key=volume_map.get, reverse=True)[:100]
     send_top_volume_message(top_ids, volume_map)
 
 def run_scheduler():
