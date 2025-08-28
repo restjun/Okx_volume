@@ -264,7 +264,7 @@ def main():
         vol_24h = get_24h_volume(inst_id)
         volume_map[inst_id] = vol_24h
         time.sleep(0.05)
-    top_ids = sorted(volume_map, key=volume_map.get, reverse=True)[:20]
+    top_ids = sorted(volume_map, key=volume_map.get, reverse=True)[:100]
     send_top_volume_message(top_ids, volume_map)
 
 def run_scheduler():
