@@ -174,20 +174,23 @@ def get_24h_volume(inst_id):
 def send_new_entry_message(all_ids):
     global sent_signal_coins
     volume_map = {inst_id:get_24h_volume(inst_id) for inst_id in all_ids}
-    rank_map = {inst_id: rank+1 for rank, inst_id in enumerate(sorted(volume_map, key=volume_map.get, reverse=True))}
+
+    # 🔹 첫 번째 거래대금 필터: 상위 100개만
+    top_100_ids = sorted(volume_map, key=volume_map.get, reverse=True)[:100]
+
+    rank_map = {inst_id: rank+1 for rank, inst_id in enumerate(top_100_ids)}
 
     new_entry_coins = []
 
-    for inst_id in all_ids:
+    for inst_id in top_100_ids:
         is_cross = check_4h_mfi_rsi_cross(inst_id, period=14)
-        df_4h = get_ohlcv_okx(inst_id, bar="4H", limit=100)
+        df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=100)
         if df_4h is None or len(df_4h)<14:
             continue
 
         h4_mfi = calc_mfi(df_4h,14).iloc[-1]
         h4_rsi = calc_rsi(df_4h,14).iloc[-1]
 
-        # 🔹 일봉 조건 제거 → 4H 조건만 체크
         if pd.isna(h4_mfi) or h4_mfi<70 or pd.isna(h4_rsi) or h4_rsi<70:
             continue
 
