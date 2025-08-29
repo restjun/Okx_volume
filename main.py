@@ -11,7 +11,7 @@ import numpy as np
 
 app = FastAPI()
 
-telegram_bot_token = "8451481398:AAHHg2wVDKphMruKsjN2b6NFKJ50jhxEe-g"
+telegram_bot_token = "여기에_텔레그램_토큰"
 telegram_user_id = 6596886700
 bot = telepot.Bot(telegram_bot_token)
 
@@ -67,8 +67,8 @@ def get_ohlcv_okx(instId, bar='1H', limit=200):
 def rma(series, period):
     return series.ewm(alpha=1/period, adjust=False).mean()
 
-# 🔹 RSI 계산
-def calc_rsi(df, period=14):
+# 🔹 RSI 계산 (3일선)
+def calc_rsi(df, period=3):
     delta = df['c'].diff()
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
@@ -80,8 +80,8 @@ def calc_rsi(df, period=14):
     rsi = 100 - (100 / (1 + rs))
     return rsi
 
-# 🔹 MFI 계산
-def calc_mfi(df, period=14):
+# 🔹 MFI 계산 (3일선)
+def calc_mfi(df, period=3):
     tp = (df['h'] + df['l'] + df['c']) / 3
     mf = tp * df['vol']
 
@@ -99,10 +99,10 @@ def calc_mfi(df, period=14):
 def format_rsi_mfi(value):
     if pd.isna(value):
         return "(N/A)"
-    return f"🟢 {value:.1f}" if value >= 60 else f"🔴 {value:.1f}"   # ✅ 기준값 60으로 수정
+    return f"🟢 {value:.1f}" if value >= 60 else f"🔴 {value:.1f}"
 
-# 🔹 4H MFI & RSI 돌파 체크
-def check_4h_mfi_rsi_cross(inst_id, period=14, threshold=60):   # ✅ threshold 기본값 60으로 수정
+# 🔹 4H MFI & RSI 돌파 체크 (3일선 기준)
+def check_4h_mfi_rsi_cross(inst_id, period=3, threshold=60):
     df = get_ohlcv_okx(inst_id, bar='4H', limit=100)
     if df is None or len(df) < period + 1:
         return False
@@ -135,7 +135,7 @@ def calculate_daily_change(inst_id):
         logging.error(f"{inst_id} 상승률 계산 오류: {e}")
         return None
 
-# 🔹 거래대금 단위
+# 🔹 거래대금 단위 변환
 def format_volume_in_eok(volume):
     try:
         eok = int(volume // 1_000_000)
@@ -154,7 +154,7 @@ def format_change_with_emoji(change):
     else:
         return f"🔴 ({change:.2f}%)"
 
-# 🔹 OKX USDT-SWAP 심볼
+# 🔹 OKX USDT-SWAP 심볼 가져오기
 def get_all_okx_swap_symbols():
     url = "https://www.okx.com/api/v5/public/instruments?instType=SWAP"
     response = retry_request(requests.get, url)
@@ -170,28 +170,27 @@ def get_24h_volume(inst_id):
         return 0
     return df['volCcyQuote'].sum()
 
-# 🔹 신규 돌파 메시지 (상위 3개만, 거래대금 순위 포함)
+# 🔹 신규 돌파 메시지 (상위 3개만)
 def send_new_entry_message(all_ids):
     global sent_signal_coins
     volume_map = {inst_id:get_24h_volume(inst_id) for inst_id in all_ids}
 
-    # 🔹 첫 번째 거래대금 필터: 상위 100개만
+    # 🔹 상위 100개만 필터링
     top_100_ids = sorted(volume_map, key=volume_map.get, reverse=True)[:100]
-
     rank_map = {inst_id: rank+1 for rank, inst_id in enumerate(top_100_ids)}
 
     new_entry_coins = []
 
     for inst_id in top_100_ids:
-        is_cross = check_4h_mfi_rsi_cross(inst_id, period=14, threshold=60)   # ✅ threshold=60
+        is_cross = check_4h_mfi_rsi_cross(inst_id, period=3, threshold=60)
         df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=100)
-        if df_4h is None or len(df_4h)<14:
+        if df_4h is None or len(df_4h)<3:
             continue
 
-        h4_mfi = calc_mfi(df_4h,14).iloc[-1]
-        h4_rsi = calc_rsi(df_4h,14).iloc[-1]
+        h4_mfi = calc_mfi(df_4h,3).iloc[-1]
+        h4_rsi = calc_rsi(df_4h,3).iloc[-1]
 
-        if pd.isna(h4_mfi) or h4_mfi<60 or pd.isna(h4_rsi) or h4_rsi<60:   # ✅ 기준값 60
+        if pd.isna(h4_mfi) or h4_mfi<60 or pd.isna(h4_rsi) or h4_rsi<60:
             continue
 
         daily_change = calculate_daily_change(inst_id)
@@ -210,7 +209,7 @@ def send_new_entry_message(all_ids):
         new_entry_coins.sort(key=lambda x: x[2], reverse=True)
         new_entry_coins = new_entry_coins[:3]
 
-        message_lines = ["⚡ 4H MFI·RSI 14일선 ≥ 60 필터", "━━━━━━━━━━━━━━━━━━━"]  # ✅ 출력 문구도 60
+        message_lines = ["⚡ 4H MFI·RSI 3일선 ≥ 60 필터", "━━━━━━━━━━━━━━━━━━━"]
         btc_id = "BTC-USDT-SWAP"
         btc_change = calculate_daily_change(btc_id)
         btc_volume = volume_map.get(btc_id,0)
