@@ -67,7 +67,7 @@ def get_ohlcv_okx(instId, bar='1H', limit=200):
 def rma(series, period):
     return series.ewm(alpha=1/period, adjust=False).mean()
 
-# 🔹 RSI 계산 (TradingView 기본, 14일선)
+# 🔹 RSI 계산
 def calc_rsi(df, period=14):
     delta = df['c'].diff()
     gain = delta.clip(lower=0)
@@ -80,7 +80,7 @@ def calc_rsi(df, period=14):
     rsi = 100 - (100 / (1 + rs))
     return rsi
 
-# 🔹 MFI 계산 (TradingView 기본, 14일선)
+# 🔹 MFI 계산
 def calc_mfi(df, period=14):
     tp = (df['h'] + df['l'] + df['c']) / 3
     mf = tp * df['vol']
@@ -101,7 +101,7 @@ def format_rsi_mfi(value):
         return "(N/A)"
     return f"🟢 {value:.1f}" if value >= 70 else f"🔴 {value:.1f}"
 
-# 🔹 4H MFI & RSI 돌파 체크 (14일선 기준)
+# 🔹 4H MFI & RSI 돌파 체크
 def check_4h_mfi_rsi_cross(inst_id, period=14, threshold=70):
     df = get_ohlcv_okx(inst_id, bar='4H', limit=100)
     if df is None or len(df) < period + 1:
@@ -180,18 +180,14 @@ def send_new_entry_message(all_ids):
 
     for inst_id in all_ids:
         is_cross = check_4h_mfi_rsi_cross(inst_id, period=14)
-        df_daily = get_ohlcv_okx(inst_id, bar="1D", limit=100)
         df_4h = get_ohlcv_okx(inst_id, bar="4H", limit=100)
-        if df_daily is None or len(df_daily)<14 or df_4h is None or len(df_4h)<14:
+        if df_4h is None or len(df_4h)<14:
             continue
 
-        daily_mfi = calc_mfi(df_daily,14).iloc[-1]
-        daily_rsi = calc_rsi(df_daily,14).iloc[-1]
         h4_mfi = calc_mfi(df_4h,14).iloc[-1]
         h4_rsi = calc_rsi(df_4h,14).iloc[-1]
 
-        if pd.isna(daily_mfi) or daily_mfi<70 or pd.isna(daily_rsi) or daily_rsi<70:
-            continue
+        # 🔹 일봉 조건 제거 → 4H 조건만 체크
         if pd.isna(h4_mfi) or h4_mfi<70 or pd.isna(h4_rsi) or h4_rsi<70:
             continue
 
@@ -203,7 +199,7 @@ def send_new_entry_message(all_ids):
         if not last_status and is_cross:
             volume_24h = volume_map.get(inst_id,0)
             coin_rank = rank_map.get(inst_id,"🚫")
-            new_entry_coins.append((inst_id, daily_change, volume_24h, daily_mfi, daily_rsi, h4_mfi, h4_rsi, coin_rank))
+            new_entry_coins.append((inst_id, daily_change, volume_24h, h4_mfi, h4_rsi, coin_rank))
 
         sent_signal_coins[inst_id] = is_cross
 
@@ -211,7 +207,7 @@ def send_new_entry_message(all_ids):
         new_entry_coins.sort(key=lambda x: x[2], reverse=True)
         new_entry_coins = new_entry_coins[:3]
 
-        message_lines = ["⚡ 4H + 일봉 MFI·RSI 14일선 ≥ 70 필터", "━━━━━━━━━━━━━━━━━━━"]
+        message_lines = ["⚡ 4H MFI·RSI 14일선 ≥ 70 필터", "━━━━━━━━━━━━━━━━━━━"]
         btc_id = "BTC-USDT-SWAP"
         btc_change = calculate_daily_change(btc_id)
         btc_volume = volume_map.get(btc_id,0)
@@ -223,13 +219,12 @@ def send_new_entry_message(all_ids):
             "🆕 신규 진입 코인 (상위 3개)"
         ]
 
-        for inst_id,daily_change,volume_24h,daily_mfi,daily_rsi,h4_mfi,h4_rsi,coin_rank in new_entry_coins:
+        for inst_id,daily_change,volume_24h,h4_mfi,h4_rsi,coin_rank in new_entry_coins:
             name = inst_id.replace("-USDT-SWAP","")
             volume_str = format_volume_in_eok(volume_24h)
             message_lines.append(
                 f"{name}\n거래대금: {volume_str}\n순위: {coin_rank}위\n상승률: {format_change_with_emoji(daily_change)}\n"
-                f"📊 일봉 RSI: {format_rsi_mfi(daily_rsi)} / MFI: {format_rsi_mfi(daily_mfi)}\n"
-                f"📊 4H   RSI: {format_rsi_mfi(h4_rsi)} / MFI: {format_rsi_mfi(h4_mfi)}"
+                f"📊 4H RSI: {format_rsi_mfi(h4_rsi)} / MFI: {format_rsi_mfi(h4_mfi)}"
             )
 
         message_lines.append("━━━━━━━━━━━━━━━━━━━")
