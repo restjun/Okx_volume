@@ -194,7 +194,7 @@ def send_new_entry_message(all_ids):
             continue
 
         daily_change = calculate_daily_change(inst_id)
-        if daily_change is None or daily_change<=0:
+        if daily_change is None or daily_change<=-100:
             continue
 
         last_status = sent_signal_coins.get(inst_id, False)
