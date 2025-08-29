@@ -99,10 +99,10 @@ def calc_mfi(df, period=14):
 def format_rsi_mfi(value):
     if pd.isna(value):
         return "(N/A)"
-    return f"🟢 {value:.1f}" if value >= 70 else f"🔴 {value:.1f}"
+    return f"🟢 {value:.1f}" if value >= 60 else f"🔴 {value:.1f}"   # ✅ 기준값 60으로 수정
 
 # 🔹 4H MFI & RSI 돌파 체크
-def check_4h_mfi_rsi_cross(inst_id, period=14, threshold=70):
+def check_4h_mfi_rsi_cross(inst_id, period=14, threshold=60):   # ✅ threshold 기본값 60으로 수정
     df = get_ohlcv_okx(inst_id, bar='4H', limit=100)
     if df is None or len(df) < period + 1:
         return False
@@ -183,7 +183,7 @@ def send_new_entry_message(all_ids):
     new_entry_coins = []
 
     for inst_id in top_100_ids:
-        is_cross = check_4h_mfi_rsi_cross(inst_id, period=14)
+        is_cross = check_4h_mfi_rsi_cross(inst_id, period=14, threshold=60)   # ✅ threshold=60
         df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=100)
         if df_4h is None or len(df_4h)<14:
             continue
@@ -191,7 +191,7 @@ def send_new_entry_message(all_ids):
         h4_mfi = calc_mfi(df_4h,14).iloc[-1]
         h4_rsi = calc_rsi(df_4h,14).iloc[-1]
 
-        if pd.isna(h4_mfi) or h4_mfi<70 or pd.isna(h4_rsi) or h4_rsi<70:
+        if pd.isna(h4_mfi) or h4_mfi<60 or pd.isna(h4_rsi) or h4_rsi<60:   # ✅ 기준값 60
             continue
 
         daily_change = calculate_daily_change(inst_id)
@@ -210,7 +210,7 @@ def send_new_entry_message(all_ids):
         new_entry_coins.sort(key=lambda x: x[2], reverse=True)
         new_entry_coins = new_entry_coins[:3]
 
-        message_lines = ["⚡ 4H MFI·RSI 14일선 ≥ 70 필터", "━━━━━━━━━━━━━━━━━━━"]
+        message_lines = ["⚡ 4H MFI·RSI 14일선 ≥ 60 필터", "━━━━━━━━━━━━━━━━━━━"]  # ✅ 출력 문구도 60
         btc_id = "BTC-USDT-SWAP"
         btc_change = calculate_daily_change(btc_id)
         btc_volume = volume_map.get(btc_id,0)
