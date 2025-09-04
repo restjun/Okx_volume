@@ -53,9 +53,9 @@ def retry_request(func, *args, **kwargs):
     return None
 
 # =========================
-# OKX OHLCV 가져오기
+# OKX OHLCV 가져오기 (4시간봉)
 # =========================
-def get_ohlcv_okx(inst_id, bar='1H', limit=300):
+def get_ohlcv_okx(inst_id, bar='4H', limit=300):
     url = f"https://www.okx.com/api/v5/market/candles?instId={inst_id}&bar={bar}&limit={limit}"
     response = retry_request(requests.get, url)
     if response is None:
@@ -119,10 +119,10 @@ def format_rsi_mfi(value, threshold=70):
     return f"🔴 {value:.1f}" if value < threshold else f"🟢 {value:.1f}"
 
 # =========================
-# 1H RSI/MFI 돌파 확인
+# 4H RSI/MFI 돌파 확인
 # =========================
-def check_1h_mfi_rsi_cross(inst_id, period=5, threshold=70):
-    df = get_ohlcv_okx(inst_id, bar='1H', limit=200)
+def check_4h_mfi_rsi_cross(inst_id, period=5, threshold=70):
+    df = get_ohlcv_okx(inst_id, bar='4H', limit=200)
     if df is None or len(df) < period + 1:
         return False, None
 
@@ -146,7 +146,7 @@ def check_1h_mfi_rsi_cross(inst_id, period=5, threshold=70):
 # 일간 상승률 계산
 # =========================
 def calculate_daily_change(inst_id):
-    df = get_ohlcv_okx(inst_id, bar="1H", limit=48)
+    df = get_ohlcv_okx(inst_id, bar="4H", limit=48)
     if df is None or len(df) < 24:
         return None
     try:
@@ -184,13 +184,13 @@ def get_all_okx_swap_symbols():
 # 24시간 거래대금
 # =========================
 def get_24h_volume(inst_id):
-    df = get_ohlcv_okx(inst_id, bar="1H", limit=24)
+    df = get_ohlcv_okx(inst_id, bar="4H", limit=24)
     if df is None or len(df) < 24:
         return 0
     return df['volCcyQuote'].sum()
 
 # =========================
-# 신규 메시지 처리 (당일 1H 기준 돌파)
+# 신규 메시지 처리 (당일 4H 기준 돌파)
 # =========================
 def send_new_entry_message(all_ids):
     global sent_signal_coins
@@ -218,10 +218,10 @@ def send_new_entry_message(all_ids):
         if inst_id not in sent_signal_coins:
             sent_signal_coins[inst_id] = {"crossed_date": None}
 
-    # === 당일 신규 1H 돌파 코인 확인 ===
+    # === 당일 신규 4H 돌파 코인 확인 ===
     for inst_id in top_ids:
-        is_cross_1h, cross_time = check_1h_mfi_rsi_cross(inst_id, period=5, threshold=70)
-        if not is_cross_1h or cross_time is None:
+        is_cross_4h, cross_time = check_4h_mfi_rsi_cross(inst_id, period=5, threshold=70)
+        if not is_cross_4h or cross_time is None:
             continue
 
         cross_date_str = cross_time.strftime("%Y-%m-%d")
@@ -245,7 +245,7 @@ def send_new_entry_message(all_ids):
 
     # 거래대금 순으로 정렬
     new_entry_coins.sort(key=lambda x: x[2], reverse=True)
-    message_lines = ["🆕 당일 신규 돌파 코인 👀 (1시간봉 기준)"]
+    message_lines = ["🆕 당일 신규 돌파 코인 👀 (4시간봉 기준)"]
     for inst_id, daily_change, volume_24h, coin_rank, cross_time in new_entry_coins:
         name = inst_id.replace("-USDT-SWAP", "")
         volume_str = format_volume_in_eok(volume_24h)
