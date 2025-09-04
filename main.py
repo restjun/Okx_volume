@@ -198,7 +198,7 @@ def send_new_entry_message(all_ids):
 
     # 거래대금 (표시용)
     volume_map = {inst_id: get_24h_volume(inst_id) for inst_id in all_ids}
-    sorted_by_volume = sorted(volume_map, key=volume_map.get, reverse=True)[:200]  # 상위 100개만 처리
+    sorted_by_volume = sorted(volume_map, key=volume_map.get, reverse=True)[:100]  # 상위 100개만 처리
     volume_rank_map = {inst_id: rank+1 for rank, inst_id in enumerate(sorted_by_volume)}
 
     # 상승률 기준 TOP10 (조건용)
@@ -243,19 +243,16 @@ def send_new_entry_message(all_ids):
     if not new_entry_coins:
         return
 
-    # 상승률 기준 내림차순 정렬 후 상위 3개만 표시
-    new_entry_coins.sort(key=lambda x: x[1], reverse=True)  # x[1] = daily_change
-    top3_coins = new_entry_coins[:3]
-
+    new_entry_coins.sort(key=lambda x: x[2], reverse=True)
     message_lines = ["🆕 당일 신규 돌파 코인 👀 (4시간봉 기준)"]
-    for idx, (inst_id, daily_change, volume_24h, coin_rank, cross_time) in enumerate(top3_coins, start=1):
+    for inst_id, daily_change, volume_24h, coin_rank, cross_time in new_entry_coins:
         name = inst_id.replace("-USDT-SWAP", "")
         volume_str = format_volume_in_eok(volume_24h)
         cross_str = cross_time.strftime("%Y-%m-%d %H:%M") if cross_time else "N/A"
         volume_rank = volume_rank_map.get(inst_id, "N/A")
         message_lines.append(
-            f"📈 상승률 {idx}위: {name}\n"
-            f"🟢🔥 {daily_change:.2f}% | 💰 거래대금 Rank {volume_rank} ({volume_str}M)\n"
+            f"{coin_rank}위 {name} (거래대금 Rank: {volume_rank})\n"
+            f"🟢🔥 {daily_change:.2f}% | 💰 {volume_str}M\n"
             f"⏰ RSI/MFI 70 돌파: {cross_str}"
         )
 
