@@ -243,16 +243,19 @@ def send_new_entry_message(all_ids):
     if not new_entry_coins:
         return
 
-    new_entry_coins.sort(key=lambda x: x[2], reverse=True)
+    # 상승률 기준 내림차순 정렬 후 상위 3개만 표시
+    new_entry_coins.sort(key=lambda x: x[1], reverse=True)  # x[1] = daily_change
+    top3_coins = new_entry_coins[:3]
+
     message_lines = ["🆕 당일 신규 돌파 코인 👀 (4시간봉 기준)"]
-    for inst_id, daily_change, volume_24h, coin_rank, cross_time in new_entry_coins:
+    for idx, (inst_id, daily_change, volume_24h, coin_rank, cross_time) in enumerate(top3_coins, start=1):
         name = inst_id.replace("-USDT-SWAP", "")
         volume_str = format_volume_in_eok(volume_24h)
         cross_str = cross_time.strftime("%Y-%m-%d %H:%M") if cross_time else "N/A"
         volume_rank = volume_rank_map.get(inst_id, "N/A")
         message_lines.append(
-            f"{coin_rank}위 {name} (거래대금 Rank: {volume_rank})\n"
-            f"🟢🔥 {daily_change:.2f}% | 💰 {volume_str}M\n"
+            f"📈 상승률 {idx}위: {name}\n"
+            f"🟢🔥 {daily_change:.2f}% | 💰 거래대금 Rank {volume_rank} ({volume_str}M)\n"
             f"⏰ RSI/MFI 70 돌파: {cross_str}"
         )
 
