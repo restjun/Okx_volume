@@ -111,17 +111,17 @@ def calc_mfi(df, period=3):
     return mfi
 
 # =========================
-# RSI/MFI 포맷팅 (임계값 60)
+# RSI/MFI 포맷팅 (임계값 70)
 # =========================
-def format_rsi_mfi(value, threshold=60):
+def format_rsi_mfi(value, threshold=70):
     if pd.isna(value):
         return "(N/A)"
     return f"🔴 {value:.1f}" if value < threshold else f"🟢 {value:.1f}"
 
 # =========================
-# 4H RSI/MFI 돌파 확인 (임계값 60)
+# 4H RSI/MFI 돌파 확인 (임계값 70)
 # =========================
-def check_4h_mfi_rsi_cross(inst_id, period=3, threshold=60):
+def check_4h_mfi_rsi_cross(inst_id, period=3, threshold=70):
     df = get_ohlcv_okx(inst_id, bar='4H', limit=200)
     if df is None or len(df) < period + 1:
         return False, None
@@ -220,7 +220,7 @@ def send_new_entry_message(all_ids):
 
     # === 당일 신규 4H 돌파 코인 확인 ===
     for inst_id in top_ids:
-        is_cross_4h, cross_time = check_4h_mfi_rsi_cross(inst_id, period=3, threshold=60)
+        is_cross_4h, cross_time = check_4h_mfi_rsi_cross(inst_id, period=3, threshold=70)
         if not is_cross_4h or cross_time is None:
             continue
 
@@ -253,7 +253,7 @@ def send_new_entry_message(all_ids):
         message_lines.append(
             f"{coin_rank}위 {name} (거래대금 Rank: {volume_rank})\n"
             f"🟢🔥 {daily_change:.2f}% | 💰 {volume_str}M\n"
-            f"⏰ RSI/MFI 60 돌파: {cross_str}"
+            f"⏰ RSI/MFI 70 돌파: {cross_str}"
         )
 
     send_telegram_message("\n".join(message_lines))
