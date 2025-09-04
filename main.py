@@ -83,9 +83,9 @@ def rma(series, period):
     return r
 
 # =========================
-# RSI 계산 (5기간)
+# RSI 계산 (3기간)
 # =========================
-def calc_rsi(df, period=5):
+def calc_rsi(df, period=3):
     delta = df['c'].diff()
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
@@ -96,9 +96,9 @@ def calc_rsi(df, period=5):
     return rsi
 
 # =========================
-# MFI 계산 (5기간)
+# MFI 계산 (3기간)
 # =========================
-def calc_mfi(df, period=5):
+def calc_mfi(df, period=3):
     tp = (df['h'] + df['l'] + df['c']) / 3
     mf = tp * df['volCcyQuote']
     delta_tp = tp.diff()
@@ -121,7 +121,7 @@ def format_rsi_mfi(value, threshold=70):
 # =========================
 # 4H RSI/MFI 돌파 확인
 # =========================
-def check_4h_mfi_rsi_cross(inst_id, period=5, threshold=70):
+def check_4h_mfi_rsi_cross(inst_id, period=3, threshold=70):
     df = get_ohlcv_okx(inst_id, bar='4H', limit=200)
     if df is None or len(df) < period + 1:
         return False, None
@@ -220,7 +220,7 @@ def send_new_entry_message(all_ids):
 
     # === 당일 신규 4H 돌파 코인 확인 ===
     for inst_id in top_ids:
-        is_cross_4h, cross_time = check_4h_mfi_rsi_cross(inst_id, period=5, threshold=70)
+        is_cross_4h, cross_time = check_4h_mfi_rsi_cross(inst_id, period=3, threshold=70)
         if not is_cross_4h or cross_time is None:
             continue
 
