@@ -194,14 +194,14 @@ def get_24h_volume(inst_id):
 # =========================
 def send_new_entry_message(all_ids):
     global sent_signal_coins
-    today_str = datetime.now().strftime("%Y-%m-%d")  # 오늘 날짜
+    today_str = datetime.now().strftime("%Y-%m-%d")
 
     # 거래대금 (표시용)
-    volume_map = {inst_id: get_24h_volume(inst_ids) for inst_ids in all_ids}
-    sorted_by_volume = sorted(volume_map, key=volume_map.get, reverse=True)[:100]  # 상위 100개만 처리
+    volume_map = {inst_id: get_24h_volume(inst_id) for inst_id in all_ids}
+    sorted_by_volume = sorted(volume_map, key=volume_map.get, reverse=True)[:100]
     volume_rank_map = {inst_id: rank+1 for rank, inst_id in enumerate(sorted_by_volume)}
 
-    # 상승률 기준 TOP10 (조건용)
+    # 상승률 기준 TOP10
     change_map = {}
     for inst_id in sorted_by_volume:
         change = calculate_daily_change(inst_id)
@@ -213,12 +213,11 @@ def send_new_entry_message(all_ids):
 
     new_entry_coins = []
 
-    # 초기화
     for inst_id in top_ids:
         if inst_id not in sent_signal_coins:
             sent_signal_coins[inst_id] = {"crossed_date": None}
 
-    # === 당일 신규 1H 돌파 코인 확인 ===
+    # === 당일 신규 1H 돌파 확인 ===
     for inst_id in top_ids:
         is_cross_1h, cross_time = check_1h_mfi_rsi_cross(inst_id, period=5, threshold=30)
         if not is_cross_1h or cross_time is None:
@@ -226,7 +225,7 @@ def send_new_entry_message(all_ids):
 
         cross_date_str = cross_time.strftime("%Y-%m-%d")
         if cross_date_str != today_str:
-            continue  # 오늘이 아닌 돌파는 제외
+            continue
 
         daily_change = calculate_daily_change(inst_id)
         if daily_change is None or daily_change < 0:
@@ -239,7 +238,6 @@ def send_new_entry_message(all_ids):
             )
             sent_signal_coins[inst_id]["crossed_date"] = today_str
 
-    # === 메세지 발송 ===
     if not new_entry_coins:
         return
 
