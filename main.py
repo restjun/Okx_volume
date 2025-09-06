@@ -257,7 +257,7 @@ def send_new_entry_message(all_ids):
         return
 
     new_entry_coins.sort(key=lambda x: x[2], reverse=True)
-    message_lines = ["🆕 당일 신규 돌파 코인 👀 (4시간봉 기준, RSI/MFI 30 돌파)"]
+    message_lines = ["🆕 당일 신규 돌파 코인 👀 \n(4시간봉 기준, RSI/MFI 30 돌파)"]
     for inst_id, daily_change, volume_24h, coin_rank, cross_time in new_entry_coins:
         name = inst_id.replace("-USDT-SWAP", "")
         volume_str = format_volume_in_eok(volume_24h)
