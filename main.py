@@ -211,7 +211,7 @@ def send_new_entry_message(all_ids):
 
     # 거래대금 (표시용)
     volume_map = {inst_id: get_24h_volume(inst_id) for inst_id in all_ids}
-    sorted_by_volume = sorted(volume_map, key=volume_map.get, reverse=True)[:2]  # 상위 100개만 처리
+    sorted_by_volume = sorted(volume_map, key=volume_map.get, reverse=True)[:10]  # 상위 100개만 처리
     volume_rank_map = {inst_id: rank+1 for rank, inst_id in enumerate(sorted_by_volume)}
 
     # 상승률 기준 TOP10 (조건용)
